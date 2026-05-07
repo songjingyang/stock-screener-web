@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useState, useTransition, useMemo } from "react";
-import { scanAction, type ScanFormState } from "./actions";
+import type { ScanFormState } from "./actions";
+import {
+  resolvePoolTsCodes,
+  runScanChunk,
+  persistScanResults,
+  type SerializedItem,
+} from "./chunk-actions";
 import { syncFullUniverse, type SyncResult } from "./sync-actions";
 import { Sparkline } from "./sparkline";
 import { pickTopRecommendations } from "@/lib/screener/recommend";
@@ -24,6 +30,16 @@ interface Props {
 
 type PoolType = "builtin" | "full" | "watchlist" | "custom";
 
+interface Progress {
+  done: number;
+  total: number;
+  /** 每批耗时滑动平均（毫秒），用于估算剩余时间 */
+  avgChunkMs: number;
+}
+
+/** 单个 chunk 内股票数。Hobby 60s 函数上限 + 腾讯并发 8、平均 0.4s/只冷拉 */
+const CHUNK_SIZE = 600;
+
 export default function ScanForm({
   strategies,
   builtinCount,
@@ -36,6 +52,7 @@ export default function ScanForm({
   const [persist, setPersist] = useState(true);
   const [state, setState] = useState<ScanFormState | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [progress, setProgress] = useState<Progress | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [currentTotal, setCurrentTotal] = useState(totalStockCount);
@@ -50,26 +67,83 @@ export default function ScanForm({
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (poolType === "full" && currentTotal < 200) {
-      const ok = window.confirm(
-        "全 A 股池为空。是否先点击『同步全 A 股』按钮再扫描？"
-      );
-      if (!ok) return;
+      window.alert("全 A 股池为空。请先点击『同步全 A 股』按钮再扫描。");
       return;
     }
-    if (poolType === "full") {
-      const ok = window.confirm(
-        `即将扫描全 A 股约 ${currentTotal} 只。\n\n` +
-          "首次扫描需要拉取每只股票的 K 线（约 100ms/只，预计 5-10 分钟）。\n" +
-          "之后由于本地缓存，再次扫描会很快（< 30 秒）。\n\n" +
-          "继续？"
-      );
-      if (!ok) return;
-    }
-    const fd = new FormData(e.currentTarget);
+
     startTransition(async () => {
       setState(null);
-      const result = await scanAction(fd);
-      setState(result);
+      setProgress(null);
+
+      // 1) 解析股票池
+      const resolved = await resolvePoolTsCodes({ poolType, customCodes });
+      if (!resolved.ok || !resolved.tsCodes) {
+        setState({ ok: false, message: resolved.message ?? "解析股票池失败" });
+        return;
+      }
+      const tsCodes = resolved.tsCodes;
+
+      // 2) 切 chunk 顺序调用
+      const allItems: SerializedItem[] = [];
+      const allFailed: string[] = [];
+      let scanDate = "";
+      const chunkTimes: number[] = [];
+
+      setProgress({ done: 0, total: tsCodes.length, avgChunkMs: 0 });
+
+      for (let i = 0; i < tsCodes.length; i += CHUNK_SIZE) {
+        const chunk = tsCodes.slice(i, i + CHUNK_SIZE);
+        const t0 = Date.now();
+        const r = await runScanChunk({ strategyId, tsCodes: chunk });
+        chunkTimes.push(Date.now() - t0);
+
+        if (!r.ok) {
+          // 单批失败：把整批列入 failed，继续下一批
+          allFailed.push(...chunk);
+          console.warn("[chunk] 失败:", r.message);
+        } else {
+          if (r.items) allItems.push(...r.items);
+          if (r.failed) allFailed.push(...r.failed);
+          if (r.scanDate && !scanDate) scanDate = r.scanDate;
+        }
+
+        const avg =
+          chunkTimes.reduce((s, x) => s + x, 0) / chunkTimes.length;
+        setProgress({
+          done: Math.min(i + chunk.length, tsCodes.length),
+          total: tsCodes.length,
+          avgChunkMs: avg,
+        });
+      }
+
+      // 3) 排序聚合
+      allItems.sort((a, b) => b.score - a.score);
+      const hitCount = allItems.filter((x) => x.pass).length;
+
+      // 4) 落库（如勾选）
+      let scanRunId: string | undefined;
+      if (persist) {
+        const p = await persistScanResults({
+          strategyId,
+          scanDate: scanDate,
+          items: allItems,
+          totalCount: tsCodes.length,
+        });
+        if (p.ok) scanRunId = p.scanRunId;
+        else
+          console.warn("[persist] 失败（结果已显示，仅未落历史）:", p.message);
+      }
+
+      setState({
+        ok: true,
+        scanRunId,
+        scanDate,
+        hitCount,
+        total: tsCodes.length,
+        failed: allFailed,
+        results: allItems,
+      });
+      setProgress(null);
     });
   }
 
@@ -201,13 +275,17 @@ export default function ScanForm({
         </section>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           type="submit"
           className="btn btn-primary"
           disabled={isPending || !strategyId}
         >
-          {isPending ? "扫描中…" : "开始扫描"}
+          {isPending
+            ? progress
+              ? `扫描中 ${progress.done}/${progress.total}…`
+              : "扫描中…"
+            : "开始扫描"}
         </button>
         {state?.results && state.results.length > 0 && (
           <button
@@ -220,6 +298,10 @@ export default function ScanForm({
         )}
       </div>
 
+      {progress && progress.total > 0 && (
+        <ScanProgress progress={progress} chunkSize={CHUNK_SIZE} />
+      )}
+
       {state && !state.ok && (
         <div className="card p-3 text-sm text-bear border-bear/40">
           {state.message}
@@ -230,6 +312,53 @@ export default function ScanForm({
         <ResultsTable state={state} />
       )}
     </form>
+  );
+}
+
+function ScanProgress({
+  progress,
+  chunkSize,
+}: {
+  progress: Progress;
+  chunkSize: number;
+}) {
+  const pct = progress.total
+    ? Math.min(100, Math.round((progress.done / progress.total) * 100))
+    : 0;
+  const remainingChunks = Math.max(
+    0,
+    Math.ceil((progress.total - progress.done) / chunkSize)
+  );
+  const etaMs = progress.avgChunkMs * remainingChunks;
+  const etaText =
+    progress.avgChunkMs > 0
+      ? etaMs > 60_000
+        ? `约 ${Math.ceil(etaMs / 60_000)} 分钟`
+        : `约 ${Math.ceil(etaMs / 1000)} 秒`
+      : "估算中…";
+
+  return (
+    <div className="card p-3 space-y-2">
+      <div className="flex items-center justify-between text-xs text-ink-soft flex-wrap gap-2">
+        <div>
+          已扫描 <b className="text-ink">{progress.done}</b> /{" "}
+          <b className="text-ink">{progress.total}</b> 只（{pct}%）
+        </div>
+        <div>
+          预计剩余 <b className="text-ink">{etaText}</b>
+        </div>
+      </div>
+      <div className="h-2 w-full bg-bg-soft rounded-full overflow-hidden">
+        <div
+          className="h-full bg-accent transition-all duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="text-xs text-ink-mute">
+        分批扫描中（每批 {chunkSize} 只，约 30–50 秒）。首次冷拉腾讯 K
+        线较慢，之后由数据库缓存提供，再次扫描会大幅加快。
+      </div>
+    </div>
   );
 }
 
