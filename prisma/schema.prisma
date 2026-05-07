@@ -1,0 +1,94 @@
+// 右侧交易筛选器数据库 schema
+// 默认 SQLite 便于本地零配置启动；生产切换 Postgres 只需改 provider 并重新 db push。
+// JSON 字段统一用 String（存 JSON 字符串），保证两种数据库行为一致。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 股票元信息
+model Stock {
+  tsCode    String       @id // e.g. 600519.SH
+  symbol    String // 6 位代码
+  name      String
+  industry  String? // 新浪行业分类，如 "白酒行业" / "半导体"
+  board     String? // 所属板块（沪市主板/创业板/科创板/北交所/...），可由 symbol 推断
+  market    String // SH / SZ / BJ
+  listDate  String? // YYYYMMDD
+  klines    KlineDaily[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// 日 K 线（前复权）
+model KlineDaily {
+  tsCode    String
+  tradeDate String // YYYYMMDD，便于排序与字符串比较
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  vol       Float // 成交量（手）
+  amount    Float // 成交额（千元）
+
+  stock Stock @relation(fields: [tsCode], references: [tsCode])
+
+  @@id([tsCode, tradeDate])
+  @@index([tradeDate])
+}
+
+// 策略：规则配置以 JSON 字符串存储
+model Strategy {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  ruleConfig  String // JSON 字符串
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  scanRuns    ScanRun[]
+}
+
+// 一次扫描批次
+model ScanRun {
+  id         String       @id @default(cuid())
+  strategyId String
+  scanDate   String // YYYYMMDD：扫描所基于的交易日
+  hitCount   Int          @default(0)
+  totalCount Int          @default(0)
+  createdAt  DateTime     @default(now())
+
+  strategy Strategy     @relation(fields: [strategyId], references: [id])
+  results  ScanResult[]
+
+  @@index([scanDate])
+  @@index([strategyId])
+}
+
+// 扫描命中明细
+model ScanResult {
+  id        String   @id @default(cuid())
+  scanRunId String
+  tsCode    String
+  score     Int
+  pass      Boolean
+  detail    String // JSON 字符串：命中条件、各指标值
+  createdAt DateTime @default(now())
+
+  scanRun ScanRun @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId])
+  @@index([tsCode])
+}
+
+// 自选股
+model Watchlist {
+  id        String   @id @default(cuid())
+  tsCode    String   @unique
+  note      String?
+  createdAt DateTime @default(now())
+}
