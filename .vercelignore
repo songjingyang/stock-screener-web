@@ -1,0 +1,23 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env.*.local
+.env.production.local
+.DS_Store
+*.log
+.vercel
+.turbo
+
+# 本地 SQLite 数据库（生产用 Postgres，无需上传）
+prisma/*.db
+prisma/*.db-journal
+
+# TS 增量缓存
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# IDE / 杂项
+.vscode
+.idea

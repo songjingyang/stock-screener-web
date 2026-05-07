@@ -8,6 +8,13 @@ import {
   type ProductSnapshot,
   type ContractPositions,
 } from "@/lib/data/cffex-positions";
+import {
+  fetchLhbHotList,
+  formatMoneyCN,
+  shortReason,
+  type LhbHotSnapshot,
+  type LhbHotItem,
+} from "@/lib/data/lhb-positions";
 
 /**
  * 首页：展示最近一次扫描的命中情况
@@ -34,10 +41,12 @@ export default async function HomePage() {
   const stockCount = await prisma.stock.count();
   const settlementEvents = getFuturesSettlementDates(6).slice(0, 6);
 
-  // 主力多空持仓（机构 = 股指 IF；央妈 = 国债 T）— 并行抓取，失败降级
-  const [stockIdxSnap, treasurySnap] = await Promise.all([
+  // 主力多空持仓（机构 = 股指 IF；央妈 = 国债 T）+ 游资热榜（龙虎榜）
+  // 三路并行抓取，任意失败均独立降级，不影响其他板块渲染
+  const [stockIdxSnap, treasurySnap, lhbSnap] = await Promise.all([
     fetchCffexPositions("IF"),
     fetchCffexPositions("T"),
+    fetchLhbHotList({ limit: 10 }),
   ]);
 
   return (
@@ -58,6 +67,8 @@ export default async function HomePage() {
         stockIdx={stockIdxSnap}
         treasury={treasurySnap}
       />
+
+      <LhbHotSection snap={lhbSnap} />
 
       <section className="card p-4 sm:p-5">
         <div className="flex items-start sm:items-center justify-between mb-3 sm:mb-4 gap-3 flex-wrap">
@@ -460,5 +471,149 @@ function FuturesSettlementCard({
         })}
       </div>
     </section>
+  );
+}
+
+/**
+ * 游资热榜（龙虎榜·游资主导）：按净买额降序展示当日 Top N。
+ * 数据失败 / 空时整体不渲染，避免占位卡。
+ */
+function LhbHotSection({ snap }: { snap: LhbHotSnapshot | null }) {
+  if (!snap || snap.items.length === 0) return null;
+
+  const tdy = `${snap.tradeDate.slice(0, 4)}-${snap.tradeDate.slice(4, 6)}-${snap.tradeDate.slice(6, 8)}`;
+  const totalNet = snap.items.reduce((s, it) => s + it.netAmt, 0);
+  const youziLed = snap.items.length;
+
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <span>⚡</span>
+          <span>游资热榜</span>
+          <span className="text-xs text-ink-mute font-normal">
+            龙虎榜 · 游资主导个股
+          </span>
+        </h2>
+        <p className="text-xs text-ink-mute">
+          数据：东方财富 · 交易日 <span className="font-mono">{tdy}</span>
+        </p>
+      </div>
+
+      <div className="card p-3 sm:p-4">
+        {/* 顶部统计 */}
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap text-xs sm:text-sm">
+          <div className="text-ink-soft">
+            上榜个股 <span className="text-ink font-mono">{snap.totalListed}</span> 只
+            <span className="mx-2 text-ink-mute">·</span>
+            游资主导 <span className="text-accent font-mono">{youziLed}</span> 只
+          </div>
+          <div className="text-ink-soft">
+            游资净买合计{" "}
+            <span
+              className={cn(
+                "font-mono",
+                totalNet > 0 ? "text-bear" : totalNet < 0 ? "text-bull" : "text-ink"
+              )}
+            >
+              {formatMoneyCN(totalNet, true)}
+            </span>
+          </div>
+        </div>
+
+        {/* 列表 */}
+        <div className="overflow-x-auto table-scroll -mx-3 sm:mx-0">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="text-ink-mute text-left text-xs">
+              <tr className="border-b border-line">
+                <th className="py-2 px-3 sm:px-0 font-medium w-8">#</th>
+                <th className="py-2 font-medium">代码 / 名称</th>
+                <th className="py-2 font-medium text-right">涨幅</th>
+                <th className="py-2 font-medium text-right">游资净买</th>
+                <th className="py-2 font-medium text-right">占成交</th>
+                <th className="py-2 pr-3 sm:pr-0 font-medium">原因 / 席位</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snap.items.map((it, idx) => (
+                <LhbRow key={it.tsCode} item={it} rank={idx + 1} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 口径说明 */}
+        <p className="text-[11px] text-ink-mute mt-3 leading-relaxed">
+          口径：买入 Top 5 席位中「营业部 / 普通席位」数量多于「机构席位」即视为游资主导；
+          同一只股多条上榜按最大净买保留。颜色：
+          <span className="text-bear mx-1">红</span>= 涨 / 净买，
+          <span className="text-bull mx-1">绿</span>= 跌 / 净卖。
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function LhbRow({ item, rank }: { item: LhbHotItem; rank: number }) {
+  const up = item.changeRate > 0;
+  const down = item.changeRate < 0;
+  const net = item.netAmt;
+  const netPos = net > 0;
+
+  return (
+    <tr className="border-b border-line/50 hover:bg-bg-soft/40">
+      <td className="py-2 px-3 sm:px-0 text-ink-mute font-mono">{rank}</td>
+      <td className="py-2">
+        <Link
+          href={`/stock/${item.tsCode}`}
+          className="block hover:text-accent transition-colors"
+        >
+          <div className="font-mono text-xs text-ink-soft">{item.tsCode}</div>
+          <div className="font-medium truncate max-w-[10em]" title={item.name}>
+            {item.name}
+          </div>
+        </Link>
+      </td>
+      <td
+        className={cn(
+          "py-2 text-right font-mono",
+          up && "text-bear",
+          down && "text-bull"
+        )}
+      >
+        {up ? "+" : ""}
+        {item.changeRate.toFixed(2)}%
+      </td>
+      <td
+        className={cn(
+          "py-2 text-right font-mono",
+          netPos ? "text-bear" : "text-bull"
+        )}
+      >
+        {formatMoneyCN(net, true)}
+      </td>
+      <td className="py-2 text-right font-mono text-ink-soft">
+        {item.dealNetRatio ? `${item.dealNetRatio.toFixed(1)}%` : "—"}
+      </td>
+      <td className="py-2 pr-3 sm:pr-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="px-1.5 py-0.5 rounded bg-bg-soft/60 border border-line text-[11px] text-ink-soft">
+            {shortReason(item.explanation)}
+          </span>
+          {item.isPureYouzi ? (
+            <span className="px-1.5 py-0.5 rounded bg-accent/15 border border-accent/40 text-[11px] text-accent">
+              纯游资
+            </span>
+          ) : item.buyInstCount > 0 ? (
+            <span
+              className="px-1.5 py-0.5 rounded bg-bg-soft/40 border border-line text-[11px] text-ink-mute"
+              title={item.explain}
+            >
+              机构 {item.buyInstCount}
+            </span>
+          ) : null}
+        </div>
+      </td>
+    </tr>
   );
 }

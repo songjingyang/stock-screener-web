@@ -113,44 +113,58 @@ stock-screener-web/
 
 ## 部署到 Vercel
 
-### 1. 创建 Vercel 项目
+本项目 **本地用 SQLite，生产用 Postgres**，由 [`scripts/prepare-prisma.js`](scripts/prepare-prisma.js) 在 build 阶段检测 `VERCEL=1` 自动改写 `schema.prisma` 的 `datasource` 块——你**不需要手工切 schema**。
 
-将本目录推送到 GitHub，登录 [Vercel](https://vercel.com/) → New Project → Import。
-
-### 2. 切换数据库到 Postgres
-
-SQLite 在 Vercel Serverless 环境下不可持久。需要切换到 Postgres：
-
-1. 在 Vercel 项目 → Storage → 创建 Postgres（或使用 [Neon](https://neon.tech/) / [Supabase](https://supabase.com/) 免费层，均支持 Postgres）。
-2. 复制连接串。
-3. 修改 [`prisma/schema.prisma`](prisma/schema.prisma)：
-
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-   ```
-
-4. 在 Vercel 项目 → Settings → Environment Variables 配置：
-   - `DATABASE_URL` —— Postgres 连接串
-   - `CRON_SECRET` —— 任意强随机串（用于 Cron 鉴权）
-   - 可选 `TUSHARE_TOKEN`
-
-### 3. 初始化数据库
-
-第一次需要手动 push schema 与 seed：
+### 一、CLI 一键部署（推荐）
 
 ```bash
-DATABASE_URL="postgresql://..." npx prisma db push
-DATABASE_URL="postgresql://..." npm run db:seed
+# 1. 全局安装 vercel CLI（如已安装可跳过）
+npm i -g vercel
+
+# 2. 在项目目录里登录（会打开浏览器）
+cd stock-screener-web
+vercel login
+
+# 3. 关联或新建项目（首次会问几个问题，全部回车默认即可）
+vercel link
+
+# 4. 在 Vercel Dashboard 给项目加一个 Vercel Postgres：
+#    项目页 → Storage → Create Database → Postgres → Connect
+#    连上后会自动注入 POSTGRES_PRISMA_URL / POSTGRES_URL_NON_POOLING 等环境变量
+
+# 5. 再补一个 CRON_SECRET（用于保护 cron 端点）
+vercel env add CRON_SECRET production   # 输入任意强随机串
+
+# 6. 部署
+vercel --prod
 ```
 
-### 4. Cron 自动扫描
+首次构建会自动跑 `prisma db push` 把表结构同步到 Postgres，无需手动操作。
 
-`vercel.json` 已配置每个工作日 UTC 08:30（= 北京时间 16:30，A 股收盘后 30 分钟）触发 `/api/cron/daily-scan`，依次跑所有预设策略并落库。
+### 二、Web UI 部署（可选）
 
-> 注意：Vercel Hobby 计划单次函数最多运行 10 秒，全市场扫描可能超时。生产建议升级 Pro（300 秒上限），或自行将 Cron 拆为按字母分批的多个任务。
+1. 把仓库推到 GitHub
+2. 登录 [vercel.com/new](https://vercel.com/new) → Import 该仓库
+3. 项目页 → Storage → Create Database → Postgres
+4. Settings → Environment Variables 加 `CRON_SECRET=任意强随机串`（可选 `TUSHARE_TOKEN`）
+5. Deployments → Redeploy
+
+### 三、数据初始化
+
+部署成功后，A 股股票池是**空的**。两种方式让它"活"起来：
+
+```bash
+# 方式 A：访问 https://你的域名/screen 选择「全 A 股」点【同步全 A 股】（10 秒）
+# 方式 B：本地拉取生产 DB URL 后 seed
+vercel env pull .env.production.local
+DATABASE_URL=$(grep POSTGRES_PRISMA_URL .env.production.local | cut -d= -f2-) npm run db:seed
+```
+
+### 四、定时扫描
+
+`vercel.json` 已配置工作日 UTC 08:30（= 北京时间 16:30，收盘后 30 分钟）自动触发 [`/api/cron/daily-scan`](app/api/cron/daily-scan/route.ts)，跑所有预设策略并落库。
+
+> Vercel Hobby 计划单次函数最多 60 秒。全市场扫描首次可能超时——可以先在本地用 `vercel env pull` 拿到生产 DB URL，本地预热完整 K 线缓存（约 5–10 分钟），再让 Cron 在缓存上做日常增量扫描即可保证 < 30 秒。Pro 计划 300 秒上限则无此问题。
 
 ## 手动测试 Cron
 
