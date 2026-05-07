@@ -8,7 +8,7 @@
     },
     {
       "path": "/api/cron/warmup",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 20 * * *"
     }
   ]
 }
