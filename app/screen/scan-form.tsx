@@ -120,13 +120,18 @@ export default function ScanForm({
       allItems.sort((a, b) => b.score - a.score);
       const hitCount = allItems.filter((x) => x.pass).length;
 
-      // 4) 落库（如勾选）
+      // 4) 落库（如勾选）—— 仅传必要字段，避开 server action 2MB body 限制
       let scanRunId: string | undefined;
       if (persist) {
         const p = await persistScanResults({
           strategyId,
           scanDate: scanDate,
-          items: allItems,
+          items: allItems.map((it) => ({
+            tsCode: it.tsCode,
+            score: it.score,
+            pass: it.pass,
+            close: it.close,
+          })),
           totalCount: tsCodes.length,
         });
         if (p.ok) scanRunId = p.scanRunId;

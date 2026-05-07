@@ -148,12 +148,25 @@ export async function runScanChunk(input: {
 }
 
 /**
+ * 落库专用的精简 item：仅包含 ScanResult 表 / 历史详情页 实际需要的字段。
+ *
+ * 设计动机：原 SerializedItem 含 30 日 closes、conditions labels、industry 等
+ * UI 渲染字段，5500 只一次性回传 server action 会突破 2 MB body limit。
+ */
+export interface PersistItem {
+  tsCode: string;
+  score: number;
+  pass: boolean;
+  close: number;
+}
+
+/**
  * 把客户端聚合后的扫描结果一次性写入 ScanRun（如用户勾选了存历史）
  */
 export async function persistScanResults(input: {
   strategyId: string;
   scanDate: string;
-  items: SerializedItem[];
+  items: PersistItem[];
   totalCount: number;
 }): Promise<PersistResult> {
   try {
@@ -170,10 +183,7 @@ export async function persistScanResults(input: {
             tsCode: s.tsCode,
             score: s.score,
             pass: s.pass,
-            detail: JSON.stringify({
-              context: { close: s.close, volRatio: s.volRatio },
-              conditions: s.conditions,
-            }),
+            detail: JSON.stringify({ context: { close: s.close } }),
           })),
         },
       },
