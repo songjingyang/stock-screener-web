@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "prepare:prisma": "node scripts/prepare-prisma.js",
-    "build": "node scripts/prepare-prisma.js && prisma generate && prisma db push --skip-generate && tsx prisma/seed.ts && next build",
+    "build": "node scripts/prepare-prisma.js && prisma generate && prisma db push --skip-generate && tsx prisma/seed.ts && tsx scripts/sync-universe-on-build.ts && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
