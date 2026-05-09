@@ -87,9 +87,16 @@ export default async function HistoryDetailPage({ params }: Props) {
           </thead>
           <tbody>
             {run.results.map((r) => {
-              const detail = JSON.parse(r.detail) as {
-                context: { close: number };
-              };
+              // 容错解析：旧版本 / 误写的 detail 不应让整页崩溃
+              let close = 0;
+              try {
+                const d = JSON.parse(r.detail) as {
+                  context?: { close?: number };
+                };
+                close = d?.context?.close ?? 0;
+              } catch {
+                /* 保持 close = 0 */
+              }
               const stock = stockMap.get(r.tsCode);
               return (
                 <tr
@@ -125,7 +132,7 @@ export default async function HistoryDetailPage({ params }: Props) {
                   </td>
                   <td className="py-2 px-4">{r.score}</td>
                   <td className="py-2 px-4 font-mono">
-                    {formatNumber(detail.context.close)}
+                    {formatNumber(close)}
                   </td>
                   <td className="py-2 px-4">
                     {(() => {
