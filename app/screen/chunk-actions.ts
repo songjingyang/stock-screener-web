@@ -111,6 +111,8 @@ export async function resolvePoolTsCodes(input: {
 export async function runScanChunk(input: {
   strategyId: string;
   tsCodes: string[];
+  /** 是否强制重拉今日 K 线 */
+  forceRefresh?: boolean;
 }): Promise<ChunkResult> {
   if (!input.strategyId) return { ok: false, message: "缺少 strategyId" };
   if (!input.tsCodes?.length) return { ok: false, message: "tsCodes 为空" };
@@ -120,6 +122,7 @@ export async function runScanChunk(input: {
       strategyId: input.strategyId,
       tsCodes: input.tsCodes,
       persist: false,
+      forceRefresh: !!input.forceRefresh,
     });
     return {
       ok: true,

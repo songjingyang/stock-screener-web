@@ -50,6 +50,8 @@ export default function ScanForm({
   const [poolType, setPoolType] = useState<PoolType>("builtin");
   const [customCodes, setCustomCodes] = useState("");
   const [persist, setPersist] = useState(true);
+  /** 默认开启：每次扫描都补当日 K 线，避免错过当日行情 */
+  const [forceRefresh, setForceRefresh] = useState(true);
   const [state, setState] = useState<ScanFormState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -94,7 +96,11 @@ export default function ScanForm({
       for (let i = 0; i < tsCodes.length; i += CHUNK_SIZE) {
         const chunk = tsCodes.slice(i, i + CHUNK_SIZE);
         const t0 = Date.now();
-        const r = await runScanChunk({ strategyId, tsCodes: chunk });
+        const r = await runScanChunk({
+          strategyId,
+          tsCodes: chunk,
+          forceRefresh,
+        });
         chunkTimes.push(Date.now() - t0);
 
         if (!r.ok) {
@@ -220,15 +226,31 @@ export default function ScanForm({
         </div>
 
         <div className="flex items-end">
-          <label className="text-sm flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={persist}
-              onChange={(e) => setPersist(e.target.checked)}
-              className="accent-accent"
-            />
-            将本次扫描结果存入历史
-          </label>
+          <div className="flex flex-col gap-2 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={forceRefresh}
+                onChange={(e) => setForceRefresh(e.target.checked)}
+                className="accent-accent"
+              />
+              <span>
+                实时拉取最新 K 线
+                <span className="text-ink-mute text-xs ml-1">
+                  （取消勾选可走缓存极速完成）
+                </span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={persist}
+                onChange={(e) => setPersist(e.target.checked)}
+                className="accent-accent"
+              />
+              将本次扫描结果存入历史
+            </label>
+          </div>
         </div>
       </section>
 

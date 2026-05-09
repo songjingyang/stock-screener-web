@@ -29,12 +29,25 @@ export function activeProvider(): KlineProvider {
   return process.env.TUSHARE_TOKEN ? "tushare" : "tencent";
 }
 
-/** 把 Date 转成 YYYYMMDD */
+/** 把 Date 转成 YYYYMMDD（始终按北京时间，避免 Vercel 函数运行在 UTC 引起跨日错位） */
 export function toCalDate(d: Date = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(d).replace(/-/g, "");
+}
+
+/** 当前北京时间小时（0–23） */
+function shanghaiHour(): number {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    hour12: false,
+  });
+  return Number(fmt.format(new Date()).split(":")[0]);
 }
 
 /** 把 YYYYMMDD 偏移 N 天 */
@@ -107,16 +120,28 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
+export interface GetKlineOptions {
+  /** 自然日跨度，默认 400 */
+  lookbackDays?: number;
+  /**
+   * 强制远端拉取增量。即便缓存判定为"无需更新"也会走腾讯接口补到 today。
+   * 用于扫描表单里勾选了"实时拉取最新 K 线"的场景。
+   */
+  forceRefresh?: boolean;
+}
+
 /**
  * 获取最近 lookbackDays 个自然日的 K 线（足够覆盖技术指标的最大周期）。
  *
  * @param tsCode 形如 "600519.SH"
- * @param lookbackDays 自然日跨度，默认 400
+ * @param opts 见 GetKlineOptions（向后兼容：仍接受数字作为 lookbackDays）
  */
 export async function getKline(
   tsCode: string,
-  lookbackDays = 400
+  opts: GetKlineOptions | number = {}
 ): Promise<KLine[]> {
+  const { lookbackDays = 400, forceRefresh = false } =
+    typeof opts === "number" ? { lookbackDays: opts } : opts;
   const today = toCalDate();
   const startDate = shiftDate(today, -lookbackDays);
 
@@ -127,7 +152,9 @@ export async function getKline(
   });
 
   const cachedLastDate = cached.length ? cached[cached.length - 1].tradeDate : null;
-  const needFetch = shouldFetch(cachedLastDate, today);
+  const needFetch = forceRefresh
+    ? cachedLastDate === null || cachedLastDate < today
+    : shouldFetch(cachedLastDate, today);
 
   if (needFetch) {
     const fetchStart = cachedLastDate ? shiftDate(cachedLastDate, 1) : startDate;
@@ -199,26 +226,31 @@ export async function getKline(
 function shouldFetch(cachedLast: string | null, today: string): boolean {
   if (!cachedLast) return true;
   if (cachedLast >= today) return false;
-  const hour = new Date().getHours();
-  const isAfterClose = hour >= 16; // 北京时间 16:00 后视为今日已收盘
+  const hour = shanghaiHour();
+  // 腾讯日 K 一般在 15:00 收盘后即可拉到当日数据，留 30 分钟缓冲
+  const isAfterClose = hour >= 15;
   if (isAfterClose && cachedLast < today) return true;
   return cachedLast < shiftDate(today, -1);
 }
 
 /**
  * 批量获取 K 线（用于扫描 / 回测），并发由各 Provider 自身限制。
+ *
+ * 第二个参数向后兼容：可传 number（视为 lookbackDays），也可传 GetKlineOptions。
  */
 export async function getKlineBatch(
   tsCodes: string[],
-  lookbackDays = 400,
+  opts: GetKlineOptions | number = 400,
   onProgress?: (done: number, total: number, code: string, ok: boolean) => void
 ): Promise<Map<string, KLine[]>> {
+  const options: GetKlineOptions =
+    typeof opts === "number" ? { lookbackDays: opts } : opts;
   const result = new Map<string, KLine[]>();
   let done = 0;
   await Promise.all(
     tsCodes.map(async (code) => {
       try {
-        const k = await getKline(code, lookbackDays);
+        const k = await getKline(code, options);
         result.set(code, k);
         onProgress?.(++done, tsCodes.length, code, true);
       } catch (err) {

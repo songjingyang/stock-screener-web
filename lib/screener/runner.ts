@@ -11,6 +11,8 @@ export interface ScanInput {
   tsCodes: string[];
   /** 是否将本次扫描结果落库为一条 ScanRun */
   persist?: boolean;
+  /** 是否强制重拉今日 K 线（绕过 shouldFetch 智能判断） */
+  forceRefresh?: boolean;
 }
 
 export interface ScanOutput {
@@ -39,13 +41,17 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
   // 拉 K 线（扫描全市场时打印进度，方便观察）
   const verbose = input.tsCodes.length > 200;
   const t0 = Date.now();
-  const klineMap = await getKlineBatch(input.tsCodes, 400, (done, total) => {
-    if (verbose && (done % 200 === 0 || done === total)) {
-      const rate = ((done / total) * 100).toFixed(1);
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      console.log(`[scan] ${done}/${total} (${rate}%) · ${elapsed}s`);
+  const klineMap = await getKlineBatch(
+    input.tsCodes,
+    { lookbackDays: 400, forceRefresh: !!input.forceRefresh },
+    (done, total) => {
+      if (verbose && (done % 200 === 0 || done === total)) {
+        const rate = ((done / total) * 100).toFixed(1);
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+        console.log(`[scan] ${done}/${total} (${rate}%) · ${elapsed}s`);
+      }
     }
-  });
+  );
 
   const items: ScoredItem[] = [];
   const failed: string[] = [];
