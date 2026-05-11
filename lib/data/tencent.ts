@@ -46,27 +46,51 @@ export async function fetchTencentKline(
     const end = endDate ? formatTencentDate(endDate) : "";
     const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${code},day,,${end},${count},qfq`;
 
-    const resp = await fetch(url, { cache: "no-store" });
-    if (!resp.ok) throw new TencentApiError("HTTP", `${resp.status}`);
-    const text = await resp.text();
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new TencentApiError("PARSE", "返回非 JSON");
-    }
-    const obj = json as {
-      code: number;
-      msg?: string;
-      data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }>;
+    // 单次 fetch 封装为 inner，外层做轻量重试（抗瞬时网络抖动 / 偶发 5xx）
+    const inner = async (): Promise<unknown[][] | "empty"> => {
+      const resp = await fetch(url, {
+        cache: "no-store",
+        // 12 秒超时：fetch 自身在 vercel 上没默认超时，避免吊死
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!resp.ok) throw new TencentApiError("HTTP", `${resp.status}`);
+      const text = await resp.text();
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new TencentApiError("PARSE", "返回非 JSON");
+      }
+      const obj = json as {
+        code: number;
+        msg?: string;
+        data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }>;
+      };
+      if (obj.code !== 0) {
+        throw new TencentApiError(String(obj.code), obj.msg ?? "unknown");
+      }
+      const block = obj.data?.[code];
+      if (!block) throw new TencentApiError("NODATA", `无数据: ${code}`);
+      return block.qfqday ?? block.day ?? "empty";
     };
-    if (obj.code !== 0) {
-      throw new TencentApiError(String(obj.code), obj.msg ?? "unknown");
+
+    let rows: unknown[][] | "empty";
+    try {
+      rows = await inner();
+    } catch (e) {
+      // 仅对网络层 / 5xx / 超时类错误重试；NODATA / 业务错误立刻抛出
+      const err = e as Error;
+      const retriable =
+        err.name === "TimeoutError" ||
+        err.name === "AbortError" ||
+        /HTTP\]\s*5/.test(err.message) ||
+        err.message.includes("fetch failed") ||
+        err.message.includes("ECONNRESET");
+      if (!retriable) throw e;
+      await new Promise((r) => setTimeout(r, 300));
+      rows = await inner();
     }
-    const block = obj.data?.[code];
-    if (!block) throw new TencentApiError("NODATA", `无数据: ${code}`);
-    const rows = block.qfqday ?? block.day ?? [];
-    if (!rows.length) return [];
+    if (rows === "empty" || !rows.length) return [];
 
     // 行格式：[date, open, close, high, low, volume, ...]
     return rows

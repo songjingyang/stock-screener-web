@@ -9,6 +9,7 @@ import {
   persistScanResults,
   type SerializedItem,
 } from "./chunk-actions";
+import type { FailedItem } from "@/lib/screener/runner";
 import { syncFullUniverse, type SyncResult } from "./sync-actions";
 import { Sparkline } from "./sparkline";
 import { pickTopRecommendations } from "@/lib/screener/recommend";
@@ -88,6 +89,7 @@ export default function ScanForm({
       // 2) 切 chunk 顺序调用
       const allItems: SerializedItem[] = [];
       const allFailed: string[] = [];
+      const allFailedDetail: FailedItem[] = [];
       let scanDate = "";
       const chunkTimes: number[] = [];
 
@@ -104,12 +106,20 @@ export default function ScanForm({
         chunkTimes.push(Date.now() - t0);
 
         if (!r.ok) {
-          // 单批失败：把整批列入 failed，继续下一批
+          // 单批失败：把整批列入 failed（原因记为 no_kline），继续下一批
           allFailed.push(...chunk);
+          for (const c of chunk) {
+            allFailedDetail.push({
+              tsCode: c,
+              reason: "no_kline",
+              klineCount: 0,
+            });
+          }
           console.warn("[chunk] 失败:", r.message);
         } else {
           if (r.items) allItems.push(...r.items);
           if (r.failed) allFailed.push(...r.failed);
+          if (r.failedDetail) allFailedDetail.push(...r.failedDetail);
           if (r.scanDate && !scanDate) scanDate = r.scanDate;
         }
 
@@ -152,6 +162,7 @@ export default function ScanForm({
         hitCount,
         total: tsCodes.length,
         failed: allFailed,
+        failedDetail: allFailedDetail,
         results: allItems,
       });
       setProgress(null);
@@ -408,6 +419,10 @@ function ResultsTable({ state }: { state: ScanFormState }) {
         <b>{state.failed?.length ?? 0}</b> 只。
       </div>
 
+      {state.failedDetail && state.failedDetail.length > 0 && (
+        <FailureBreakdown failed={state.failedDetail} />
+      )}
+
       {tops.length > 0 && <RecommendCards tops={tops} />}
 
       <div className="card overflow-hidden">
@@ -426,6 +441,75 @@ function ResultsTable({ state }: { state: ScanFormState }) {
         </details>
       )}
     </div>
+  );
+}
+
+function FailureBreakdown({ failed }: { failed: FailedItem[] }) {
+  const byReason = useMemo(() => {
+    const map = new Map<string, FailedItem[]>();
+    for (const f of failed) {
+      const arr = map.get(f.reason);
+      if (arr) arr.push(f);
+      else map.set(f.reason, [f]);
+    }
+    return map;
+  }, [failed]);
+
+  const labelOf = (r: string) =>
+    r === "no_kline"
+      ? "无 K 线（接口拉取失败 / 退市 / 长停牌）"
+      : r === "insufficient"
+        ? "K 线不足 70 根（新股 / 长停牌）"
+        : r === "evaluate_error"
+          ? "指标计算异常"
+          : r;
+
+  const colorOf = (r: string) =>
+    r === "no_kline"
+      ? "text-bear"
+      : r === "insufficient"
+        ? "text-ink-soft"
+        : "text-amber-400";
+
+  return (
+    <details className="card overflow-hidden">
+      <summary className="px-3 sm:px-4 py-2 border-b border-line text-sm font-medium cursor-pointer text-ink-soft flex flex-wrap gap-x-3 gap-y-1 items-center">
+        <span className="text-ink">失败明细（{failed.length}）</span>
+        {Array.from(byReason.entries()).map(([reason, list]) => (
+          <span key={reason} className={cn("text-xs", colorOf(reason))}>
+            {labelOf(reason)} <b>{list.length}</b>
+          </span>
+        ))}
+      </summary>
+      <div className="p-3 sm:p-4 space-y-3 text-xs">
+        {Array.from(byReason.entries()).map(([reason, list]) => (
+          <div key={reason}>
+            <div className={cn("font-medium mb-1.5", colorOf(reason))}>
+              {labelOf(reason)} · {list.length} 只
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {list.slice(0, 60).map((f) => (
+                <span
+                  key={f.tsCode}
+                  className="badge bg-bg-soft text-ink-soft border border-line font-mono"
+                  title={`K 线 ${f.klineCount} 根`}
+                >
+                  {f.tsCode}
+                </span>
+              ))}
+              {list.length > 60 && (
+                <span className="text-ink-mute">…等 {list.length - 60} 只</span>
+              )}
+            </div>
+          </div>
+        ))}
+        <p className="text-ink-mute pt-1 leading-relaxed">
+          说明：A 股市场约有数百只长停牌 / 已退市 / 北交所新股缺少近 1
+          年完整日 K 线，无法计算技术指标；属于市场结构性正常情况，与扫描质量无关。
+          若「无 K 线」一栏数量异常偏大，可能是腾讯接口临时限流，重试一次通常会大幅减少。
+        </p>
+      </div>
+    </details>
   );
 }
 

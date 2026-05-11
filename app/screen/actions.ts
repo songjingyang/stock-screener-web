@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db/prisma";
-import { runScan } from "@/lib/screener/runner";
+import { runScan, type FailedItem } from "@/lib/screener/runner";
 import { BUILTIN_POOL, toTsCode } from "@/lib/data/universe";
 import { revalidatePath } from "next/cache";
 
@@ -27,6 +27,8 @@ export interface ScanFormState {
     conditions: Array<{ label: string; pass: boolean }>;
   }>;
   failed?: string[];
+  /** 失败明细：按原因分类（no_kline / insufficient / evaluate_error） */
+  failedDetail?: FailedItem[];
 }
 
 export async function scanAction(formData: FormData): Promise<ScanFormState> {
@@ -87,6 +89,7 @@ export async function scanAction(formData: FormData): Promise<ScanFormState> {
       hitCount: out.hitCount,
       total: out.total,
       failed: out.failed,
+      failedDetail: out.failedDetail,
       results: out.items.map((it) => ({
         tsCode: it.tsCode,
         name: it.name,

@@ -15,13 +15,28 @@ export interface ScanInput {
   forceRefresh?: boolean;
 }
 
+/** 失败原因分类，便于前端分组展示 */
+export type FailReason =
+  | "no_kline" /* 远端拉取失败 / 接口返回空 */
+  | "insufficient" /* K 线不足 70 根，指标无法计算（新股 / 长停牌 / 退市） */
+  | "evaluate_error"; /* 规则引擎抛错或返回 null */
+
+export interface FailedItem {
+  tsCode: string;
+  reason: FailReason;
+  /** K 线条数（用于排查；no_kline 时为 0） */
+  klineCount: number;
+}
+
 export interface ScanOutput {
   scanRunId?: string;
   scanDate: string;
   total: number;
   hitCount: number;
   items: ScoredItem[];
+  /** 仅保留 tsCode 兼容旧调用，详细分类见 failedDetail */
   failed: string[];
+  failedDetail: FailedItem[];
 }
 
 export async function runScan(input: ScanInput): Promise<ScanOutput> {
@@ -54,17 +69,25 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
   );
 
   const items: ScoredItem[] = [];
-  const failed: string[] = [];
+  const failedDetail: FailedItem[] = [];
 
   for (const tsCode of input.tsCodes) {
     const k = klineMap.get(tsCode) ?? [];
+    if (k.length === 0) {
+      failedDetail.push({ tsCode, reason: "no_kline", klineCount: 0 });
+      continue;
+    }
     if (k.length < 70) {
-      failed.push(tsCode);
+      failedDetail.push({ tsCode, reason: "insufficient", klineCount: k.length });
       continue;
     }
     const result = evaluate(k, ruleConfig);
     if (!result) {
-      failed.push(tsCode);
+      failedDetail.push({
+        tsCode,
+        reason: "evaluate_error",
+        klineCount: k.length,
+      });
       continue;
     }
     const stock = stockMap.get(tsCode);
@@ -114,6 +137,7 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
     total: input.tsCodes.length,
     hitCount: hits.length,
     items: sorted,
-    failed,
+    failed: failedDetail.map((f) => f.tsCode),
+    failedDetail,
   };
 }

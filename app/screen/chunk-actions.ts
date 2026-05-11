@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db/prisma";
-import { runScan } from "@/lib/screener/runner";
+import { runScan, type FailedItem } from "@/lib/screener/runner";
 import { BUILTIN_POOL, toTsCode } from "@/lib/data/universe";
 import { revalidatePath } from "next/cache";
 import { toCalDate } from "@/lib/data/kline-cache";
@@ -43,6 +43,8 @@ export interface ChunkResult {
   message?: string;
   items?: SerializedItem[];
   failed?: string[];
+  /** 分类后的失败明细，前端用于展示原因分布 */
+  failedDetail?: FailedItem[];
   scanDate?: string;
 }
 
@@ -128,6 +130,7 @@ export async function runScanChunk(input: {
       ok: true,
       scanDate: out.scanDate,
       failed: out.failed,
+      failedDetail: out.failedDetail,
       items: out.items.map((it) => ({
         tsCode: it.tsCode,
         name: it.name,
