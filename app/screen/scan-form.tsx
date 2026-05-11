@@ -482,35 +482,90 @@ function FailureBreakdown({ failed }: { failed: FailedItem[] }) {
         ))}
       </summary>
       <div className="p-3 sm:p-4 space-y-3 text-xs">
-        {Array.from(byReason.entries()).map(([reason, list]) => (
-          <div key={reason}>
-            <div className={cn("font-medium mb-1.5", colorOf(reason))}>
-              {labelOf(reason)} · {list.length} 只
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {list.slice(0, 60).map((f) => (
-                <span
-                  key={f.tsCode}
-                  className="badge bg-bg-soft text-ink-soft border border-line font-mono"
-                  title={`K 线 ${f.klineCount} 根`}
-                >
-                  {f.tsCode}
-                </span>
-              ))}
-              {list.length > 60 && (
-                <span className="text-ink-mute">…等 {list.length - 60} 只</span>
+        {Array.from(byReason.entries()).map(([reason, list]) => {
+          // 在「无 K 线」分组里按 errorMessage 聚合，便于一眼看出主要失败类型
+          const errStats =
+            reason === "no_kline" ? aggregateErrors(list) : null;
+          return (
+            <div key={reason}>
+              <div className={cn("font-medium mb-1.5", colorOf(reason))}>
+                {labelOf(reason)} · {list.length} 只
+              </div>
+              {errStats && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-ink-soft">
+                  {errStats.map((s) => (
+                    <span key={s.key}>
+                      <span className="text-ink">{s.label}</span>{" "}
+                      <b className="font-mono">{s.count}</b>
+                    </span>
+                  ))}
+                </div>
               )}
+              <div className="flex flex-wrap gap-1">
+                {list.slice(0, 60).map((f) => (
+                  <span
+                    key={f.tsCode}
+                    className="badge bg-bg-soft text-ink-soft border border-line font-mono"
+                    title={
+                      f.errorMessage
+                        ? `${f.errorMessage} · K 线 ${f.klineCount} 根`
+                        : `K 线 ${f.klineCount} 根`
+                    }
+                  >
+                    {f.tsCode}
+                  </span>
+                ))}
+                {list.length > 60 && (
+                  <span className="text-ink-mute">…等 {list.length - 60} 只</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <p className="text-ink-mute pt-1 leading-relaxed">
           说明：A 股市场约有数百只长停牌 / 已退市 / 北交所新股缺少近 1
           年完整日 K 线，无法计算技术指标；属于市场结构性正常情况，与扫描质量无关。
-          若「无 K 线」一栏数量异常偏大，可能是腾讯接口临时限流，重试一次通常会大幅减少。
+          若「无 K 线」一栏的「NODATA」与「-1（限流）」很多，说明触发了腾讯接口限流，
+          稍后再扫一次（缓存已落库的会跳过）通常显著改善。
         </p>
       </div>
     </details>
   );
+}
+
+/**
+ * 把 no_kline 的 errorMessage 聚合成「Top 5 类别 + count」
+ * 让用户一眼区分是「真退市 (NODATA)」、「限流 (-1)」、还是「超时/网络」
+ */
+function aggregateErrors(
+  list: FailedItem[]
+): Array<{ key: string; label: string; count: number }> {
+  const map = new Map<string, number>();
+  for (const f of list) {
+    const key = classifyError(f.errorMessage);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return Array.from(map.entries())
+    .map(([key, count]) => ({ key, label: key, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+}
+
+function classifyError(msg?: string): string {
+  if (!msg) return "未知";
+  if (msg.includes("NODATA")) return "NODATA（接口无数据）";
+  if (msg.includes("Tencent:-1")) return "-1（腾讯限流）";
+  if (msg.includes("Tencent:-")) {
+    const m = msg.match(/Tencent:(-?\d+)/);
+    return m ? `${m[1]}（接口业务错误）` : "腾讯业务错误";
+  }
+  if (msg.includes("HTTP") && /HTTP\]\s*5/.test(msg)) return "HTTP 5xx";
+  if (msg.includes("HTTP")) return "HTTP 错误";
+  if (msg.includes("Timeout") || msg.includes("AbortError")) return "超时";
+  if (msg.includes("fetch failed") || msg.includes("ECONNRESET"))
+    return "网络中断";
+  if (msg.includes("PARSE")) return "返回非 JSON";
+  return msg.slice(0, 24);
 }
 
 function RecommendCards({

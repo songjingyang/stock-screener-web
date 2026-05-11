@@ -26,6 +26,8 @@ export interface FailedItem {
   reason: FailReason;
   /** K 线条数（用于排查；no_kline 时为 0） */
   klineCount: number;
+  /** 远端接口的错误 message（仅 no_kline 时可能存在） */
+  errorMessage?: string;
 }
 
 export interface ScanOutput {
@@ -56,7 +58,7 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
   // 拉 K 线（扫描全市场时打印进度，方便观察）
   const verbose = input.tsCodes.length > 200;
   const t0 = Date.now();
-  const klineMap = await getKlineBatch(
+  const { data: klineMap, errors: klineErrors } = await getKlineBatch(
     input.tsCodes,
     { lookbackDays: 400, forceRefresh: !!input.forceRefresh },
     (done, total) => {
@@ -74,7 +76,12 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
   for (const tsCode of input.tsCodes) {
     const k = klineMap.get(tsCode) ?? [];
     if (k.length === 0) {
-      failedDetail.push({ tsCode, reason: "no_kline", klineCount: 0 });
+      failedDetail.push({
+        tsCode,
+        reason: "no_kline",
+        klineCount: 0,
+        errorMessage: klineErrors.get(tsCode),
+      });
       continue;
     }
     if (k.length < 70) {

@@ -237,28 +237,33 @@ function shouldFetch(cachedLast: string | null, today: string): boolean {
  * 批量获取 K 线（用于扫描 / 回测），并发由各 Provider 自身限制。
  *
  * 第二个参数向后兼容：可传 number（视为 lookbackDays），也可传 GetKlineOptions。
+ *
+ * @returns 结果 Map + 错误 Map（key 为 tsCode，value 为错误 message）
  */
 export async function getKlineBatch(
   tsCodes: string[],
   opts: GetKlineOptions | number = 400,
   onProgress?: (done: number, total: number, code: string, ok: boolean) => void
-): Promise<Map<string, KLine[]>> {
+): Promise<{ data: Map<string, KLine[]>; errors: Map<string, string> }> {
   const options: GetKlineOptions =
     typeof opts === "number" ? { lookbackDays: opts } : opts;
-  const result = new Map<string, KLine[]>();
+  const data = new Map<string, KLine[]>();
+  const errors = new Map<string, string>();
   let done = 0;
   await Promise.all(
     tsCodes.map(async (code) => {
       try {
         const k = await getKline(code, options);
-        result.set(code, k);
+        data.set(code, k);
         onProgress?.(++done, tsCodes.length, code, true);
       } catch (err) {
-        console.warn(`[kline-cache] ${code} 失败:`, (err as Error).message);
-        result.set(code, []);
+        const msg = (err as Error).message;
+        console.warn(`[kline-cache] ${code} 失败:`, msg);
+        data.set(code, []);
+        errors.set(code, msg);
         onProgress?.(++done, tsCodes.length, code, false);
       }
     })
   );
-  return result;
+  return { data, errors };
 }

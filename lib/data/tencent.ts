@@ -10,8 +10,9 @@
 import pLimit from "p-limit";
 import { toTencentCode } from "./universe";
 
-// 腾讯接口比较友好；过高会被短暂限流。8 是经验上较稳的并发上限。
-const limit = pLimit(Number(process.env.TENCENT_CONCURRENCY ?? 8));
+// 腾讯接口对中等并发友好，但在 Vercel 函数 (hkg1) 长时间 8 并发会触发 IP 限流，
+// 整批 600 只里出现大量 -1 / NODATA。降到 4 后稳定性显著提升。
+const limit = pLimit(Number(process.env.TENCENT_CONCURRENCY ?? 4));
 
 export interface TencentDailyBar {
   date: string; // YYYYMMDD（已转换）
@@ -74,22 +75,25 @@ export async function fetchTencentKline(
       return block.qfqday ?? block.day ?? "empty";
     };
 
-    let rows: unknown[][] | "empty";
-    try {
-      rows = await inner();
-    } catch (e) {
-      // 仅对网络层 / 5xx / 超时类错误重试；NODATA / 业务错误立刻抛出
-      const err = e as Error;
-      const retriable =
-        err.name === "TimeoutError" ||
-        err.name === "AbortError" ||
-        /HTTP\]\s*5/.test(err.message) ||
-        err.message.includes("fetch failed") ||
-        err.message.includes("ECONNRESET");
-      if (!retriable) throw e;
-      await new Promise((r) => setTimeout(r, 300));
-      rows = await inner();
+    // 重试策略（KISS）：最多 3 次，指数退避 300/800/2000 ms
+    //   - 网络/超时/5xx 全部重试
+    //   - 腾讯接口的 NODATA 也重试（高并发下经常假性返回 NODATA）
+    //   - 仅腾讯明确的「code != 0」业务错误（如 -1 限流）也重试
+    //   - 真正不存在的股票会在 3 次后稳定返回 NODATA，最终归类无 K 线
+    const delays = [300, 800, 2000];
+    let lastErr: unknown = null;
+    let rows: unknown[][] | "empty" | null = null;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        rows = await inner();
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (attempt === delays.length) break;
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+      }
     }
+    if (rows === null) throw lastErr as Error;
     if (rows === "empty" || !rows.length) return [];
 
     // 行格式：[date, open, close, high, low, volume, ...]

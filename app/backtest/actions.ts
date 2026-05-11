@@ -62,7 +62,7 @@ export async function backtestAction(
     400,
     diffDaysYYYYMMDD(startDate, endDate) + 200
   );
-  const klineMap = await getKlineBatch(tsCodes, lookbackDays);
+  const { data: klineMap } = await getKlineBatch(tsCodes, lookbackDays);
 
   const results = tsCodes.map((code) => {
     const k = klineMap.get(code) ?? [];
