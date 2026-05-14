@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { BUILTIN_POOL } from "@/lib/data/universe";
+import { getBuiltinByName } from "@/lib/screener/presets";
 import ScanForm from "./scan-form";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ export default async function ScreenPage() {
           name: s.name,
           description: s.description,
           ruleConfig: s.ruleConfig,
+          // 把内置策略的操盘手册以纯数据形式带给客户端
+          playbook: getBuiltinByName(s.name)?.playbook ?? null,
         }))}
         builtinCount={builtinCount}
         totalStockCount={totalStockCount}

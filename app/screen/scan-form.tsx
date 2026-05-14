@@ -13,6 +13,7 @@ import type { FailedItem } from "@/lib/screener/runner";
 import { syncFullUniverse, type SyncResult } from "./sync-actions";
 import { Sparkline } from "./sparkline";
 import { pickTopRecommendations } from "@/lib/screener/recommend";
+import type { StrategyPlaybook } from "@/lib/screener/presets";
 import { cn, formatNumber } from "@/lib/utils";
 
 interface StrategyLite {
@@ -20,6 +21,7 @@ interface StrategyLite {
   name: string;
   description: string | null;
   ruleConfig: string;
+  playbook: StrategyPlaybook | null;
 }
 
 interface Props {
@@ -313,6 +315,13 @@ export default function ScanForm({
         </section>
       )}
 
+      {selectedStrategy?.playbook && (
+        <PlaybookCard
+          name={selectedStrategy.name}
+          playbook={selectedStrategy.playbook}
+        />
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
         <button
           type="submit"
@@ -347,7 +356,11 @@ export default function ScanForm({
       )}
 
       {state?.ok && state.results && (
-        <ResultsTable state={state} />
+        <ResultsTable
+          state={state}
+          strategyName={selectedStrategy?.name ?? ""}
+          playbook={selectedStrategy?.playbook ?? null}
+        />
       )}
     </form>
   );
@@ -400,7 +413,15 @@ function ScanProgress({
   );
 }
 
-function ResultsTable({ state }: { state: ScanFormState }) {
+function ResultsTable({
+  state,
+  strategyName,
+  playbook,
+}: {
+  state: ScanFormState;
+  strategyName: string;
+  playbook: StrategyPlaybook | null;
+}) {
   const hits = state.results!.filter((r) => r.pass);
   const partials = state.results!.filter((r) => !r.pass).slice(0, 30);
 
@@ -423,7 +444,13 @@ function ResultsTable({ state }: { state: ScanFormState }) {
         <FailureBreakdown failed={state.failedDetail} />
       )}
 
-      {tops.length > 0 && <RecommendCards tops={tops} />}
+      {tops.length > 0 && (
+        <RecommendCards
+          tops={tops}
+          strategyName={strategyName}
+          playbook={playbook}
+        />
+      )}
 
       <div className="card overflow-hidden">
         <div className="px-3 sm:px-4 py-2 border-b border-line text-sm font-medium">
@@ -570,8 +597,12 @@ function classifyError(msg?: string): string {
 
 function RecommendCards({
   tops,
+  strategyName,
+  playbook,
 }: {
   tops: ReturnType<typeof pickTopRecommendations<NonNullable<ScanFormState["results"]>[number]>>;
+  strategyName: string;
+  playbook: StrategyPlaybook | null;
 }) {
   return (
     <div className="card overflow-hidden border-amber-500/40 bg-amber-500/5">
@@ -582,7 +613,9 @@ function RecommendCards({
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
-        {tops.map((t, idx) => (
+        {tops.map((t, idx) => {
+          const trade = computeTradePlan(t.close, strategyName);
+          return (
           <div
             key={t.tsCode}
             className="rounded-lg border border-amber-500/30 bg-bg-soft/40 p-3 space-y-2"
@@ -629,6 +662,41 @@ function RecommendCards({
               )}
             </div>
 
+            {/* 按当前策略生成的具体买卖参考价 */}
+            {trade && (
+              <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                <div className="rounded border border-bull/30 bg-bull/5 px-2 py-1.5">
+                  <div className="text-ink-mute text-[10px] mb-0.5">买点</div>
+                  <div className="font-mono text-bull font-semibold">
+                    ≤ {formatNumber(trade.entryMax)}
+                  </div>
+                  <div className="text-ink-mute text-[10px] mt-0.5">
+                    {trade.entryNote}
+                  </div>
+                </div>
+                <div className="rounded border border-bear/30 bg-bear/5 px-2 py-1.5">
+                  <div className="text-ink-mute text-[10px] mb-0.5">止损</div>
+                  <div className="font-mono text-bear font-semibold">
+                    {formatNumber(trade.stopLoss)}
+                  </div>
+                  <div className="text-ink-mute text-[10px] mt-0.5">
+                    {trade.stopNote}
+                  </div>
+                </div>
+                <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
+                  <div className="text-ink-mute text-[10px] mb-0.5">分批卖</div>
+                  <div className="font-mono text-amber-400 font-semibold">
+                    {formatNumber(trade.takeProfit1)}
+                    <span className="text-ink-mute"> / </span>
+                    {formatNumber(trade.takeProfit2)}
+                  </div>
+                  <div className="text-ink-mute text-[10px] mt-0.5">
+                    {trade.exitNote}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {t.rec.reasons.length > 0 && (
               <ul className="text-xs space-y-1 mt-1">
                 {t.rec.reasons.map((reason, i) => (
@@ -660,10 +728,79 @@ function RecommendCards({
               </Link>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+      {playbook && (
+        <div className="px-3 sm:px-4 py-2 border-t border-amber-500/30 text-[11px] text-ink-mute leading-relaxed">
+          以上买卖参考价根据「{strategyName}」纪律自动计算；具体止损请配合 K
+          线页的均线位置微调。完整操盘手册见上方策略卡。
+        </div>
+      )}
     </div>
   );
+}
+
+/**
+ * 根据当前收盘价 + 策略名生成具体买卖参考价位。
+ * 设计：返回价格点 + 一句简短中文说明，由 UI 直接展示。
+ */
+function computeTradePlan(close: number, strategyName: string) {
+  if (!Number.isFinite(close) || close <= 0) return null;
+  // 同一套基础数据 + 不同策略的纪律差异
+  switch (strategyName) {
+    case "三指标共振":
+      return {
+        entryMax: close * 1.01,
+        entryNote: "现价 +1% 内追入；高开 >2% 等回踩 5 日线",
+        stopLoss: close * 0.93,
+        stopNote: "或收盘破 MA20",
+        takeProfit1: close * 1.08,
+        takeProfit2: close * 1.15,
+        exitNote: "+8%/+15% 各减 1/3",
+      };
+    case "强势缩量回踩":
+      return {
+        entryMax: close * 1.005,
+        entryNote: "收盘站稳 MA20 → 介入；不追高",
+        stopLoss: close * 0.97,
+        stopNote: "MA20 下方 3% / 放量破 MA20",
+        takeProfit1: close * 1.06,
+        takeProfit2: close * 1.12,
+        exitNote: "放量过前高减半；MA20 破 → 全清",
+      };
+    case "平台突破":
+      return {
+        entryMax: close * 1.01,
+        entryNote: "突破当日 +1% 内 1/2 仓；次日不破上沿加满",
+        stopLoss: close * 0.95,
+        stopNote: "跌回平台中位数 -5%",
+        takeProfit1: close * 1.15,
+        takeProfit2: close * 1.30,
+        exitNote: "+15%/+30% 减半；趋势线破清仓",
+      };
+    case "全指标共振（高胜率）":
+      return {
+        entryMax: close * 1.01,
+        entryNote: "现价 +1% 内介入；高开 >2% 等回踩",
+        stopLoss: close * 0.95,
+        stopNote: "或收盘破 MA20（更紧的止损）",
+        takeProfit1: close * 1.10,
+        takeProfit2: close * 1.20,
+        exitNote: "+10%/+20% 减仓；MACD/KDJ 高位死叉清仓",
+      };
+    default:
+      // 自定义策略：通用保守参考
+      return {
+        entryMax: close * 1.01,
+        entryNote: "通用：现价 +1% 内",
+        stopLoss: close * 0.93,
+        stopNote: "通用：-7% 硬止损",
+        takeProfit1: close * 1.08,
+        takeProfit2: close * 1.15,
+        exitNote: "通用：+8%/+15% 分批",
+      };
+  }
 }
 
 function ResultRows({
@@ -774,6 +911,58 @@ function ResultRows({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * 策略操盘手册卡：策略选择后展示完整买卖纪律
+ */
+function PlaybookCard({
+  name,
+  playbook,
+}: {
+  name: string;
+  playbook: StrategyPlaybook;
+}) {
+  return (
+    <section className="card overflow-hidden border-accent/30">
+      <div className="px-3 sm:px-4 py-2 border-b border-accent/30 bg-accent/5 flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-medium text-ink">📋 操盘手册：{name}</span>
+        <span className="badge bg-accent/15 text-accent border border-accent/30 text-xs">
+          {playbook.tag}
+        </span>
+        <span className="badge bg-bg-soft text-ink-soft border border-line text-xs">
+          {playbook.position}
+        </span>
+        <span className="badge bg-bg-soft text-ink-soft border border-line text-xs">
+          持有 {playbook.holdPeriod}
+        </span>
+      </div>
+      <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <div className="rounded border border-bull/30 bg-bull/5 p-2.5">
+          <div className="font-medium text-bull mb-1">🟢 买入时机</div>
+          <p className="text-ink-soft leading-relaxed">{playbook.entry}</p>
+        </div>
+        <div className="rounded border border-bear/30 bg-bear/5 p-2.5">
+          <div className="font-medium text-bear mb-1">🔴 止损纪律</div>
+          <p className="text-ink-soft leading-relaxed">{playbook.stopLoss}</p>
+        </div>
+        <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2.5">
+          <div className="font-medium text-amber-400 mb-1">🟡 卖出 / 止盈</div>
+          <p className="text-ink-soft leading-relaxed">{playbook.exit}</p>
+        </div>
+      </div>
+      <div className="px-3 sm:px-4 pb-3 sm:pb-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+        <div>
+          <span className="text-ink-mute">✓ 适用：</span>
+          <span className="text-ink-soft">{playbook.suitFor}</span>
+        </div>
+        <div>
+          <span className="text-ink-mute">✗ 不适用：</span>
+          <span className="text-ink-soft">{playbook.avoid}</span>
+        </div>
+      </div>
+    </section>
   );
 }
 
