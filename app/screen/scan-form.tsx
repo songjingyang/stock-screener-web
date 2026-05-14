@@ -55,6 +55,8 @@ export default function ScanForm({
   const [persist, setPersist] = useState(true);
   /** 默认开启：每次扫描都补当日 K 线，避免错过当日行情 */
   const [forceRefresh, setForceRefresh] = useState(true);
+  /** 默认开启：交易时段把实时分时价合并到最后一根 K 线 */
+  const [mergeRealtime, setMergeRealtime] = useState(true);
   const [state, setState] = useState<ScanFormState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -100,10 +102,11 @@ export default function ScanForm({
       for (let i = 0; i < tsCodes.length; i += CHUNK_SIZE) {
         const chunk = tsCodes.slice(i, i + CHUNK_SIZE);
         const t0 = Date.now();
-        const r = await runScanChunk({
+          const r = await runScanChunk({
           strategyId,
           tsCodes: chunk,
           forceRefresh,
+          mergeRealtime,
         });
         chunkTimes.push(Date.now() - t0);
 
@@ -251,6 +254,20 @@ export default function ScanForm({
                 实时拉取最新 K 线
                 <span className="text-ink-mute text-xs ml-1">
                   （取消勾选可走缓存极速完成）
+                </span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mergeRealtime}
+                onChange={(e) => setMergeRealtime(e.target.checked)}
+                className="accent-accent"
+              />
+              <span>
+                用实时分时价驱动指标
+                <span className="text-ink-mute text-xs ml-1">
+                  （盘中按当前分时价计算，非交易时段自动失效）
                 </span>
               </span>
             </label>

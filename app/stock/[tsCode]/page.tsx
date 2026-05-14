@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
-import { getKline } from "@/lib/data/kline-cache";
+import { getKline, isMarketOpen } from "@/lib/data/kline-cache";
 import { evaluate } from "@/lib/screener/rule-engine";
 import type { RuleConfig } from "@/lib/screener/rule-engine";
 import { compactDate, formatNumber, formatPercent, cn } from "@/lib/utils";
@@ -35,10 +35,16 @@ export default async function StockPage({ params, searchParams }: PageProps) {
   let kline: Awaited<ReturnType<typeof getKline>> = [];
   let kerror: string | null = null;
   try {
-    kline = await getKline(tsCode, 400);
+    // 分析单股时默认开启实时合并：交易时段用分时价驱动指标
+    kline = await getKline(tsCode, {
+      lookbackDays: 400,
+      forceRefresh: true,
+      mergeRealtime: true,
+    });
   } catch (err) {
     kerror = (err as Error).message;
   }
+  const marketOpen = isMarketOpen();
 
   // 公告 / 重大事项（与 K 线并行抓取，失败不影响整页）
   const announcements = await fetchAnnouncements(tsCode, { limit: 12 });
@@ -96,11 +102,24 @@ export default async function StockPage({ params, searchParams }: PageProps) {
             )}
           </div>
           {kline.length > 0 && (
-            <div className="text-sm text-ink-mute mt-1">
-              最新 {compactDate(kline[kline.length - 1].date)} · 收盘{" "}
-              <span className="text-ink font-mono">
-                {formatNumber(kline[kline.length - 1].close)}
+            <div className="text-sm text-ink-mute mt-1 flex items-center gap-2 flex-wrap">
+              <span>
+                最新 {compactDate(kline[kline.length - 1].date)} ·{" "}
+                {marketOpen ? "分时实时价" : "收盘"}{" "}
+                <span
+                  className={cn(
+                    "font-mono",
+                    marketOpen ? "text-amber-400 font-semibold" : "text-ink"
+                  )}
+                >
+                  {formatNumber(kline[kline.length - 1].close)}
+                </span>
               </span>
+              {marketOpen && (
+                <span className="badge bg-amber-500/15 text-amber-400 border border-amber-500/40 text-[10px]">
+                  ● 盘中实时
+                </span>
+              )}
             </div>
           )}
         </div>

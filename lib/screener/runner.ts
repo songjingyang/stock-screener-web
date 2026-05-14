@@ -13,6 +13,8 @@ export interface ScanInput {
   persist?: boolean;
   /** 是否强制重拉今日 K 线（绕过 shouldFetch 智能判断） */
   forceRefresh?: boolean;
+  /** 交易时段是否合并实时分时价到最后一根 K 线（用实时价驱动指标） */
+  mergeRealtime?: boolean;
 }
 
 /** 失败原因分类，便于前端分组展示 */
@@ -60,7 +62,11 @@ export async function runScan(input: ScanInput): Promise<ScanOutput> {
   const t0 = Date.now();
   const { data: klineMap, errors: klineErrors } = await getKlineBatch(
     input.tsCodes,
-    { lookbackDays: 400, forceRefresh: !!input.forceRefresh },
+    {
+      lookbackDays: 400,
+      forceRefresh: !!input.forceRefresh,
+      mergeRealtime: !!input.mergeRealtime,
+    },
     (done, total) => {
       if (verbose && (done % 200 === 0 || done === total)) {
         const rate = ((done / total) * 100).toFixed(1);

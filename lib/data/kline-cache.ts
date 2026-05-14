@@ -8,7 +8,11 @@
  * SOLID：上层 (screener/backtest) 只依赖此处的 KLine 类型，不感知数据源。
  */
 import { prisma } from "@/lib/db/prisma";
-import { fetchTencentKline, type TencentDailyBar } from "./tencent";
+import {
+  fetchTencentKline,
+  fetchTencentQuoteBatch,
+  type TencentDailyBar,
+} from "./tencent";
 import { fetchKlineQfq, type TushareDaily } from "./tushare";
 import { inferBoard } from "./universe";
 
@@ -48,6 +52,42 @@ function shanghaiHour(): number {
     hour12: false,
   });
   return Number(fmt.format(new Date()).split(":")[0]);
+}
+
+/** 北京时间「小时×60 + 分钟」（0–1439），用于精确判断交易时段 */
+function shanghaiMinutes(): number {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.format(new Date()).split(":");
+  return Number(parts[0]) * 60 + Number(parts[1]);
+}
+
+/** 北京时间当天是否为周末 */
+function isShanghaiWeekend(): boolean {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    weekday: "short",
+  });
+  const wd = fmt.format(new Date());
+  return wd === "Sat" || wd === "Sun";
+}
+
+/**
+ * 是否处于 A 股交易时段
+ *   - 9:30–11:30、13:00–15:00 北京时间，工作日
+ *   - 注：不识别节假日；节假日内实时报价接口会返回前一交易日数据，
+ *     合并到 K 线没有副作用（仅多 1 次网络往返）
+ */
+export function isMarketOpen(): boolean {
+  if (isShanghaiWeekend()) return false;
+  const m = shanghaiMinutes();
+  const am = m >= 9 * 60 + 30 && m <= 11 * 60 + 30;
+  const pm = m >= 13 * 60 && m <= 15 * 60;
+  return am || pm;
 }
 
 /** 把 YYYYMMDD 偏移 N 天 */
@@ -128,6 +168,17 @@ export interface GetKlineOptions {
    * 用于扫描表单里勾选了"实时拉取最新 K 线"的场景。
    */
   forceRefresh?: boolean;
+  /**
+   * 交易时段把实时分时价合并到最后一根 K 线。
+   *
+   * 行为：
+   *   - 如果最后一根 K 线日期 = today（腾讯日 K 在盘中会返回当日的实时合成行）：
+   *     用实时 close / open / high / low / vol 覆盖，使指标随盘中实时跳动
+   *   - 如果最后一根 K 线日期 < today（盘中未返回当日行）：
+   *     追加一根"今日临时 K 线"，open=high=low=close=实时价、vol=今日累计量
+   *   - 非交易时段（盘后 / 周末）不合并，保持日 K 收盘口径
+   */
+  mergeRealtime?: boolean;
 }
 
 /**
@@ -140,8 +191,11 @@ export async function getKline(
   tsCode: string,
   opts: GetKlineOptions | number = {}
 ): Promise<KLine[]> {
-  const { lookbackDays = 400, forceRefresh = false } =
-    typeof opts === "number" ? { lookbackDays: opts } : opts;
+  const {
+    lookbackDays = 400,
+    forceRefresh = false,
+    mergeRealtime = false,
+  } = typeof opts === "number" ? { lookbackDays: opts } : opts;
   const today = toCalDate();
   const startDate = shiftDate(today, -lookbackDays);
 
@@ -155,6 +209,16 @@ export async function getKline(
   const needFetch = forceRefresh
     ? cachedLastDate === null || cachedLastDate < today
     : shouldFetch(cachedLastDate, today);
+
+  let bars: KLine[] = cached.map((c) => ({
+    date: c.tradeDate,
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+    vol: c.vol,
+    amount: c.amount,
+  }));
 
   if (needFetch) {
     const fetchStart = cachedLastDate ? shiftDate(cachedLastDate, 1) : startDate;
@@ -196,31 +260,24 @@ export async function getKline(
       });
 
       const map = new Map<string, KLine>();
-      for (const c of cached) {
-        map.set(c.tradeDate, {
-          date: c.tradeDate,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          vol: c.vol,
-          amount: c.amount,
-        });
-      }
+      for (const b of bars) map.set(b.date, b);
       for (const r of remote) map.set(r.date, r);
-      return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+      bars = Array.from(map.values()).sort((a, b) =>
+        a.date.localeCompare(b.date)
+      );
     }
   }
 
-  return cached.map((c) => ({
-    date: c.tradeDate,
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
-    vol: c.vol,
-    amount: c.amount,
-  }));
+  if (mergeRealtime && isMarketOpen() && bars.length > 0) {
+    try {
+      const quotes = await fetchTencentQuoteBatch([tsCode]);
+      const q = quotes.get(tsCode);
+      if (q) mergeQuoteIntoKline(bars, q, today);
+    } catch {
+      /* 实时合并失败不阻塞主流程，沿用日 K close */
+    }
+  }
+  return bars;
 }
 
 function shouldFetch(cachedLast: string | null, today: string): boolean {
@@ -265,5 +322,58 @@ export async function getKlineBatch(
       }
     })
   );
+
+  // 交易时段批量合并实时分时价（仅在 mergeRealtime 显式开启时）
+  if (options.mergeRealtime && isMarketOpen()) {
+    const okCodes = tsCodes.filter((c) => (data.get(c)?.length ?? 0) > 0);
+    if (okCodes.length > 0) {
+      const quotes = await fetchTencentQuoteBatch(okCodes).catch(
+        () => new Map()
+      );
+      const today = toCalDate();
+      for (const code of okCodes) {
+        const q = quotes.get(code);
+        if (!q) continue;
+        const bars = data.get(code)!;
+        mergeQuoteIntoKline(bars, q, today);
+      }
+    }
+  }
   return { data, errors };
+}
+
+/**
+ * 把实时报价合并到 K 线序列：
+ *   - 末根日期 == today：直接覆盖 close / vol 等
+ *   - 末根日期 < today：追加一根「今日临时」K 线
+ *
+ * 注：仅修改内存中的 K 线数组，不写库（盘中实时数据不持久化，
+ * 避免污染缓存；下次拉取 cached 后会再次实时合并）
+ */
+function mergeQuoteIntoKline(
+  bars: KLine[],
+  q: import("./tencent").RealtimeQuote,
+  today: string
+): void {
+  if (!bars.length) return;
+  const last = bars[bars.length - 1];
+  if (last.date === today) {
+    // 用实时价覆盖盘中合成行
+    last.close = q.close;
+    last.high = Math.max(last.high, q.high, q.close);
+    last.low = Math.min(last.low, q.low, q.close);
+    last.open = q.open || last.open;
+    last.vol = q.vol || last.vol;
+  } else {
+    // 追加一根今日临时 K 线
+    bars.push({
+      date: today,
+      open: q.open || q.close,
+      high: q.high || q.close,
+      low: q.low || q.close,
+      close: q.close,
+      vol: q.vol,
+      amount: 0,
+    });
+  }
 }

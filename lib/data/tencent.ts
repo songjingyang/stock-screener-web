@@ -154,6 +154,85 @@ export async function fetchTencentQuote(
   });
 }
 
+export interface RealtimeQuote {
+  /** 当前价（交易时段为分时实时价，盘后为收盘价） */
+  close: number;
+  /** 今开 */
+  open: number;
+  /** 当日最高 */
+  high: number;
+  /** 当日最低 */
+  low: number;
+  /** 今日累计成交量（单位：手） */
+  vol: number;
+  /** 昨收 */
+  prevClose: number;
+  /** 数据时间（YYYYMMDDHHMMSS），交易时段会随分时更新 */
+  ts: string;
+}
+
+/**
+ * 批量拉取实时报价
+ *
+ * 设计动机：
+ *   - 分析 / 筛选场景需要"实时分时价"驱动指标，5500 只单只请求会限流
+ *   - 腾讯 qt.gtimg.cn 支持一次最多 60 只（URL 长度安全），效率 ×60
+ *
+ * 字段口径参考腾讯 v_xxx="..." 行，字段索引：
+ *   1=name 3=当前价 4=昨收 5=今开 6=成交量(手) 30=时间 33=最高 34=最低
+ */
+export async function fetchTencentQuoteBatch(
+  tsCodes: string[]
+): Promise<Map<string, RealtimeQuote>> {
+  const result = new Map<string, RealtimeQuote>();
+  if (!tsCodes.length) return result;
+
+  // 每批 50 只，并发受全局 limit 约束
+  const BATCH = 50;
+  const batches: string[][] = [];
+  for (let i = 0; i < tsCodes.length; i += BATCH) {
+    batches.push(tsCodes.slice(i, i + BATCH));
+  }
+
+  await Promise.all(
+    batches.map((batch) =>
+      limit(async () => {
+        const codes = batch.map((c) => toTencentCode(c));
+        const url = `https://qt.gtimg.cn/q=${codes.join(",")}`;
+        const resp = await fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => null);
+        if (!resp || !resp.ok) return;
+        const text = await resp.text();
+        // 多行 v_xxx="..."; 解析
+        const lines = text.split(/[\n;]+/).filter(Boolean);
+        for (const line of lines) {
+          const codeMatch = line.match(/v_(sh|sz|bj)(\d{6})="([^"]+)"/i);
+          if (!codeMatch) continue;
+          const market = codeMatch[1].toUpperCase();
+          const symbol = codeMatch[2];
+          const tsCode = `${symbol}.${market}`;
+          const fields = codeMatch[3].split("~");
+          if (fields.length < 35) continue;
+          const close = Number(fields[3]);
+          if (!Number.isFinite(close) || close <= 0) continue;
+          result.set(tsCode, {
+            close,
+            prevClose: Number(fields[4]) || 0,
+            open: Number(fields[5]) || close,
+            vol: Number(fields[6]) || 0,
+            ts: String(fields[30] ?? ""),
+            high: Number(fields[33]) || close,
+            low: Number(fields[34]) || close,
+          });
+        }
+      })
+    )
+  );
+  return result;
+}
+
 function formatTencentDate(yyyymmdd: string): string {
   if (yyyymmdd.length !== 8) return yyyymmdd;
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;

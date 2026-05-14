@@ -115,6 +115,8 @@ export async function runScanChunk(input: {
   tsCodes: string[];
   /** 是否强制重拉今日 K 线 */
   forceRefresh?: boolean;
+  /** 交易时段把实时分时价合并到最后一根 K 线 */
+  mergeRealtime?: boolean;
 }): Promise<ChunkResult> {
   if (!input.strategyId) return { ok: false, message: "缺少 strategyId" };
   if (!input.tsCodes?.length) return { ok: false, message: "tsCodes 为空" };
@@ -125,6 +127,7 @@ export async function runScanChunk(input: {
       tsCodes: input.tsCodes,
       persist: false,
       forceRefresh: !!input.forceRefresh,
+      mergeRealtime: !!input.mergeRealtime,
     });
     return {
       ok: true,
