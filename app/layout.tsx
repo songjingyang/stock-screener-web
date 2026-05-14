@@ -18,6 +18,7 @@ export const viewport: Viewport = {
 const NAV = [
   { href: "/", label: "今日命中" },
   { href: "/screen", label: "筛选" },
+  { href: "/rotation", label: "板块" },
   { href: "/backtest", label: "回测" },
   { href: "/watchlist", label: "自选" },
   { href: "/history", label: "历史" },
