@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
+import StockSearch from "./_components/stock-search";
 
 export const metadata: Metadata = {
   title: "右侧交易高胜率筛选器",
@@ -39,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 v0.1
               </span>
             </Link>
-            <nav className="flex items-center gap-1 text-sm overflow-x-auto no-scrollbar -mx-1 px-1">
+            <nav className="flex items-center gap-1 text-sm overflow-x-auto no-scrollbar -mx-1 px-1 flex-1 min-w-0">
               {NAV.map((it) => (
                 <Link
                   key={it.href}
@@ -50,6 +51,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
+            <div className="ml-auto shrink-0">
+              <StockSearch />
+            </div>
           </div>
         </header>
 

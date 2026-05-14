@@ -10,6 +10,10 @@ import {
   levelLabel,
   type Announcement,
 } from "@/lib/data/announcements";
+import {
+  BUILTIN_STRATEGIES,
+  type StrategyPlaybook,
+} from "@/lib/screener/presets";
 import KLineChart from "./kline-chart";
 import WatchlistButton from "./watchlist-button";
 import StrategySelect from "./strategy-select";
@@ -55,6 +59,16 @@ export default async function StockPage({ params, searchParams }: PageProps) {
     kline.length >= 70 && strategy
       ? evaluate(kline, JSON.parse(strategy.ruleConfig) as RuleConfig)
       : null;
+
+  // 多策略并行评估（仅对内置 4 个策略）：让用户一眼看到本股票今日命中了哪些策略
+  const lastClose = kline.length ? kline[kline.length - 1].close : 0;
+  const multiAnalysis =
+    kline.length >= 70
+      ? BUILTIN_STRATEGIES.map((bs) => {
+          const r = evaluate(kline, bs.ruleConfig);
+          return r ? { name: bs.name, playbook: bs.playbook, result: r } : null;
+        }).filter((x): x is NonNullable<typeof x> => x !== null)
+      : [];
 
   // MA 序列（用于图表）
   const closes = kline.map((k) => k.close);
@@ -208,9 +222,197 @@ export default async function StockPage({ params, searchParams }: PageProps) {
         </aside>
       </div>
 
+      {multiAnalysis.length > 0 && (
+        <MultiStrategyAnalysis
+          analyses={multiAnalysis}
+          close={lastClose}
+        />
+      )}
+
       <AnnouncementsSection announcements={announcements} />
     </div>
   );
+}
+
+/**
+ * 多策略命中分析卡：4 个内置策略并行跑一遍，每行显示
+ *   命中状态 / 评分 / 当前策略对应的买卖参考价
+ */
+function MultiStrategyAnalysis({
+  analyses,
+  close,
+}: {
+  analyses: Array<{
+    name: string;
+    playbook: StrategyPlaybook;
+    result: NonNullable<ReturnType<typeof evaluate>>;
+  }>;
+  close: number;
+}) {
+  const hits = analyses.filter((a) => a.result.pass);
+  return (
+    <section className="card overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-line flex items-center gap-2 flex-wrap">
+        <span className="text-base font-semibold">📊 多策略命中分析</span>
+        {hits.length > 0 ? (
+          <span className="badge badge-pass text-xs">
+            命中 {hits.length}/{analyses.length}
+          </span>
+        ) : (
+          <span className="badge bg-bg-soft text-ink-soft text-xs">
+            未命中任何策略
+          </span>
+        )}
+        <span className="text-xs text-ink-mute hidden sm:inline">
+          按当前收盘价 {formatNumber(close)} 计算买卖参考价
+        </span>
+      </div>
+      <div className="divide-y divide-line/50">
+        {analyses.map((a) => {
+          const trade = computeTradePlan(close, a.name);
+          return (
+            <div
+              key={a.name}
+              className={cn(
+                "p-3 sm:p-4 space-y-2",
+                a.result.pass && "bg-bull/5"
+              )}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={cn(
+                    "badge text-xs",
+                    a.result.pass
+                      ? "badge-pass"
+                      : "bg-bg-soft text-ink-soft"
+                  )}
+                >
+                  {a.result.pass ? "✓ 命中" : "✗ 未命中"}
+                </span>
+                <span className="font-medium">{a.name}</span>
+                <span className="badge bg-accent/10 text-accent border border-accent/30 text-xs">
+                  {a.playbook.tag}
+                </span>
+                <span className="text-xs text-ink-soft">
+                  评分 {a.result.score}/{a.result.maxScore}
+                </span>
+                <span className="text-xs text-ink-mute hidden md:inline">
+                  · 持有 {a.playbook.holdPeriod} · {a.playbook.position}
+                </span>
+              </div>
+
+              {/* 条件命中徽标 */}
+              <div className="flex flex-wrap gap-1">
+                {a.result.conditions.map((c, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "badge text-[10px]",
+                      c.pass
+                        ? "badge-pass"
+                        : "bg-bg-soft text-ink-mute border border-line"
+                    )}
+                    title={c.label}
+                  >
+                    {c.label}
+                  </span>
+                ))}
+              </div>
+
+              {/* 仅对命中的策略显示具体买卖参考价 */}
+              {a.result.pass && trade && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1">
+                  <div className="rounded border border-bull/30 bg-bull/5 px-2.5 py-2">
+                    <div className="text-ink-mute text-[10px] mb-0.5">
+                      🟢 买入
+                    </div>
+                    <div className="font-mono text-bull font-semibold">
+                      ≤ {formatNumber(trade.entryMax)}
+                    </div>
+                    <div className="text-ink-soft text-[11px] mt-1">
+                      {a.playbook.entry}
+                    </div>
+                  </div>
+                  <div className="rounded border border-bear/30 bg-bear/5 px-2.5 py-2">
+                    <div className="text-ink-mute text-[10px] mb-0.5">
+                      🔴 止损
+                    </div>
+                    <div className="font-mono text-bear font-semibold">
+                      {formatNumber(trade.stopLoss)}
+                    </div>
+                    <div className="text-ink-soft text-[11px] mt-1">
+                      {a.playbook.stopLoss}
+                    </div>
+                  </div>
+                  <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
+                    <div className="text-ink-mute text-[10px] mb-0.5">
+                      🟡 分批卖
+                    </div>
+                    <div className="font-mono text-amber-400 font-semibold">
+                      {formatNumber(trade.takeProfit1)}
+                      <span className="text-ink-mute"> / </span>
+                      {formatNumber(trade.takeProfit2)}
+                    </div>
+                    <div className="text-ink-soft text-[11px] mt-1">
+                      {a.playbook.exit}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="px-3 sm:px-4 py-2 border-t border-line text-[11px] text-ink-mute leading-relaxed">
+        命中即代表当日所有规则同时满足；未命中策略可参考上方未通过的条件徽标，了解还差几条。
+        买卖参考价基于当前收盘价 × 各策略止损/止盈系数，请配合 K 线均线位置微调。
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 同 scan-form 内的策略买卖价计算（保持口径一致）
+ */
+function computeTradePlan(close: number, strategyName: string) {
+  if (!Number.isFinite(close) || close <= 0) return null;
+  switch (strategyName) {
+    case "三指标共振":
+      return {
+        entryMax: close * 1.01,
+        stopLoss: close * 0.93,
+        takeProfit1: close * 1.08,
+        takeProfit2: close * 1.15,
+      };
+    case "强势缩量回踩":
+      return {
+        entryMax: close * 1.005,
+        stopLoss: close * 0.97,
+        takeProfit1: close * 1.06,
+        takeProfit2: close * 1.12,
+      };
+    case "平台突破":
+      return {
+        entryMax: close * 1.01,
+        stopLoss: close * 0.95,
+        takeProfit1: close * 1.15,
+        takeProfit2: close * 1.30,
+      };
+    case "全指标共振（高胜率）":
+      return {
+        entryMax: close * 1.01,
+        stopLoss: close * 0.95,
+        takeProfit1: close * 1.10,
+        takeProfit2: close * 1.20,
+      };
+    default:
+      return {
+        entryMax: close * 1.01,
+        stopLoss: close * 0.93,
+        takeProfit1: close * 1.08,
+        takeProfit2: close * 1.15,
+      };
+  }
 }
 
 function AnnouncementsSection({
