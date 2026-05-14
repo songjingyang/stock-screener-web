@@ -35,10 +35,10 @@ export default async function StockPage({ params, searchParams }: PageProps) {
   let kline: Awaited<ReturnType<typeof getKline>> = [];
   let kerror: string | null = null;
   try {
-    // 分析单股时默认开启实时合并：交易时段用分时价驱动指标
+    // 分析单股：默认走缓存（凌晨 warmup 已填好）+ 盘中合并实时分时价
+    // 之前 forceRefresh:true 让每次访问都打腾讯日 K 接口，单股页打开变成 1-3s 延迟
     kline = await getKline(tsCode, {
       lookbackDays: 400,
-      forceRefresh: true,
       mergeRealtime: true,
     });
   } catch (err) {
