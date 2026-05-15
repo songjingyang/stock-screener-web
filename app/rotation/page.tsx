@@ -78,7 +78,7 @@ export default async function RotationPage() {
           <div className="flex items-center gap-2 text-xs text-ink-mute flex-wrap">
             <Legend color="bg-bull/40" label="今日涨" />
             <Legend color="bg-bear/40" label="今日跌" />
-            <Legend color="bg-amber-500/40" label="轮入" />
+            <Legend color="bg-amber-300" label="轮入" />
             <Legend color="bg-purple-500/40" label="轮出" />
           </div>
         </div>
@@ -176,7 +176,7 @@ function StateCard({
 function IndustryRow({ ind }: { ind: IndustryMetric }) {
   const c = stateColor(ind.state);
   return (
-    <tr className="border-b border-line/50 hover:bg-bg-soft/30">
+    <tr className="border-b border-line/50 hover:bg-bg-muted">
       <td className="py-2 px-3 sm:px-4 font-medium">{ind.industry}</td>
       <td className="py-2 px-4">
         <span

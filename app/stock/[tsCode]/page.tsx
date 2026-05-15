@@ -14,6 +14,12 @@ import {
   BUILTIN_STRATEGIES,
   type StrategyPlaybook,
 } from "@/lib/screener/presets";
+import {
+  computeSupportResistance,
+  strengthLabel,
+  type PriceLevel,
+  type SupportResistance,
+} from "@/lib/screener/support-resistance";
 import KLineChart from "./kline-chart";
 import WatchlistButton from "./watchlist-button";
 import StrategySelect from "./strategy-select";
@@ -75,6 +81,11 @@ export default async function StockPage({ params, searchParams }: PageProps) {
           return r ? { name: bs.name, playbook: bs.playbook, result: r } : null;
         }).filter((x): x is NonNullable<typeof x> => x !== null)
       : [];
+  const anyHit = multiAnalysis.some((a) => a.result.pass);
+
+  // 支撑 / 压力位（始终计算；当未命中任何策略时默认展开，便于用户判断进出场）
+  const sr =
+    kline.length >= 20 ? computeSupportResistance(kline) : null;
 
   // MA 序列（用于图表）
   const closes = kline.map((k) => k.close);
@@ -109,14 +120,14 @@ export default async function StockPage({ params, searchParams }: PageProps) {
                 <span
                   className={cn(
                     "font-mono",
-                    marketOpen ? "text-amber-400 font-semibold" : "text-ink"
+                    marketOpen ? "text-amber-600 font-semibold" : "text-ink"
                   )}
                 >
                   {formatNumber(kline[kline.length - 1].close)}
                 </span>
               </span>
               {marketOpen && (
-                <span className="badge bg-amber-500/15 text-amber-400 border border-amber-500/40 text-[10px]">
+                <span className="badge bg-amber-100 text-amber-600 border border-amber-400 text-[10px]">
                   ● 盘中实时
                 </span>
               )}
@@ -248,6 +259,10 @@ export default async function StockPage({ params, searchParams }: PageProps) {
         />
       )}
 
+      {sr && (sr.resistances.length > 0 || sr.supports.length > 0) && (
+        <SupportResistanceCard sr={sr} highlight={!anyHit} />
+      )}
+
       <AnnouncementsSection announcements={announcements} />
     </div>
   );
@@ -294,7 +309,7 @@ function MultiStrategyAnalysis({
               key={a.name}
               className={cn(
                 "p-3 sm:p-4 space-y-2",
-                a.result.pass && "bg-bull/5"
+                a.result.pass && "bg-bull/10"
               )}
             >
               <div className="flex items-center gap-2 flex-wrap">
@@ -341,7 +356,7 @@ function MultiStrategyAnalysis({
               {/* 仅对命中的策略显示具体买卖参考价 */}
               {a.result.pass && trade && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1">
-                  <div className="rounded border border-bull/30 bg-bull/5 px-2.5 py-2">
+                  <div className="rounded border border-bull/30 bg-bull/10 px-2.5 py-2">
                     <div className="text-ink-mute text-[10px] mb-0.5">
                       🟢 买入
                     </div>
@@ -352,7 +367,7 @@ function MultiStrategyAnalysis({
                       {a.playbook.entry}
                     </div>
                   </div>
-                  <div className="rounded border border-bear/30 bg-bear/5 px-2.5 py-2">
+                  <div className="rounded border border-bear/30 bg-bear/10 px-2.5 py-2">
                     <div className="text-ink-mute text-[10px] mb-0.5">
                       🔴 止损
                     </div>
@@ -363,11 +378,11 @@ function MultiStrategyAnalysis({
                       {a.playbook.stopLoss}
                     </div>
                   </div>
-                  <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
+                  <div className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2">
                     <div className="text-ink-mute text-[10px] mb-0.5">
                       🟡 分批卖
                     </div>
-                    <div className="font-mono text-amber-400 font-semibold">
+                    <div className="font-mono text-amber-600 font-semibold">
                       {formatNumber(trade.takeProfit1)}
                       <span className="text-ink-mute"> / </span>
                       {formatNumber(trade.takeProfit2)}
@@ -434,6 +449,153 @@ function computeTradePlan(close: number, strategyName: string) {
   }
 }
 
+/**
+ * 支撑 / 压力位卡片
+ *
+ * 行为：
+ *   - 始终显示（对持仓判断也有用）
+ *   - 当未命中任何策略时（highlight=true），加亮边框 + 默认开起 details
+ *   - 多重重合的关键位用 ⭐ 强标
+ */
+function SupportResistanceCard({
+  sr,
+  highlight,
+}: {
+  sr: SupportResistance;
+  highlight: boolean;
+}) {
+  return (
+    <section
+      className={cn(
+        "card overflow-hidden",
+        highlight && "border-accent/40 bg-accent/5"
+      )}
+    >
+      <div className="px-3 sm:px-4 py-2 border-b border-line flex items-center gap-2 flex-wrap">
+        <span className="text-base font-semibold">🎯 关键价位</span>
+        <span className="text-xs text-ink-mute hidden sm:inline">
+          均线 / 高低点 / BOLL / 斐波那契 / 整数关 多重叠加
+        </span>
+        {highlight && (
+          <span className="badge bg-accent/15 text-accent border border-accent/40 text-xs">
+            未命中策略 · 重点参考
+          </span>
+        )}
+      </div>
+
+      {sr.hint && (
+        <div className="px-3 sm:px-4 py-2 border-b border-line bg-bg-soft/40 text-xs text-ink">
+          {sr.hint}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-line/50">
+        {/* 压力位（向上） */}
+        <LevelList
+          title="📈 压力位（向上）"
+          color="bear"
+          levels={sr.resistances}
+          current={sr.current}
+        />
+        {/* 支撑位（向下） */}
+        <LevelList
+          title="📉 支撑位（向下）"
+          color="bull"
+          levels={sr.supports}
+          current={sr.current}
+        />
+      </div>
+
+      <div className="px-3 sm:px-4 py-2 border-t border-line text-[11px] text-ink-mute leading-relaxed">
+        操盘建议：当前价 {formatNumber(sr.current)}
+        ；接近压力位需警惕回踩，可减仓或挂出止盈；接近强支撑位（含 ⭐ 多重叠加）
+        可作为低吸点或加仓位，止损放在该支撑下方 1–2%。
+      </div>
+    </section>
+  );
+}
+
+function LevelList({
+  title,
+  color,
+  levels,
+  current,
+}: {
+  title: string;
+  color: "bull" | "bear";
+  levels: PriceLevel[];
+  current: number;
+}) {
+  const baseColor = color === "bull" ? "text-bull" : "text-bear";
+  return (
+    <div className="p-3 sm:p-4">
+      <div className={cn("text-sm font-medium mb-2", baseColor)}>{title}</div>
+      {levels.length === 0 ? (
+        <div className="text-xs text-ink-mute">未识别到关键位</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {levels.map((l, i) => {
+            const multi = l.label.includes("+");
+            return (
+              <li
+                key={i}
+                className={cn(
+                  "flex items-center justify-between gap-2 px-2 py-1.5 rounded border text-xs",
+                  l.strength === "strong"
+                    ? "border-line bg-bg-soft/60"
+                    : "border-line/50",
+                  multi && "border-amber-500/40 bg-amber-500/5"
+                )}
+              >
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {multi && (
+                    <span
+                      className="text-amber-400 shrink-0"
+                      title="多重重合，关键关口"
+                    >
+                      ⭐
+                    </span>
+                  )}
+                  <span className="truncate">{l.label}</span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-[10px] px-1 py-0.5 rounded border font-medium",
+                      l.strength === "strong"
+                        ? "border-amber-500/40 text-amber-400 bg-amber-500/10"
+                        : l.strength === "medium"
+                          ? "border-line text-ink-soft bg-bg-soft"
+                          : "border-line/50 text-ink-mute"
+                    )}
+                  >
+                    {strengthLabel(l.strength)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 text-right">
+                  <span className="font-mono text-ink">
+                    {formatNumber(l.price)}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono text-[11px]",
+                      l.distance >= 0 ? "text-bear" : "text-bull"
+                    )}
+                  >
+                    {l.distance >= 0 ? "+" : ""}
+                    {(l.distance * 100).toFixed(2)}%
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="mt-2 text-[11px] text-ink-mute">
+        基于当前价 <span className="font-mono">{formatNumber(current)}</span>
+      </div>
+    </div>
+  );
+}
+
 function AnnouncementsSection({
   announcements,
 }: {
@@ -470,7 +632,7 @@ function AnnouncementsSection({
               <span className="text-bear mr-2">重要 {high.length}</span>
             )}
             {med.length > 0 && (
-              <span className="text-amber-400">关注 {med.length}</span>
+              <span className="text-amber-600">关注 {med.length}</span>
             )}
           </div>
         )}
@@ -489,8 +651,8 @@ function AnnouncementRow({ ann }: { ann: Announcement }) {
     ann.level === "high"
       ? "border-bear/60 bg-bear/15 text-bear"
       : ann.level === "med"
-        ? "border-amber-500/60 bg-amber-500/15 text-amber-400"
-        : "border-line bg-bg-soft/50 text-ink-mute";
+        ? "border-amber-500 bg-amber-100 text-amber-600"
+        : "border-line bg-bg-muted text-ink-mute";
   return (
     <li className="py-2 flex items-start gap-3 group">
       <span

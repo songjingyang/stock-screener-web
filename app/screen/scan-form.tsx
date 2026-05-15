@@ -309,7 +309,7 @@ export default function ScanForm({
       )}
 
       {poolType === "full" && currentTotal >= 200 && (
-        <div className="card p-3 text-xs text-ink-soft border-accent/20 bg-accent/5">
+        <div className="card p-3 text-xs text-ink-soft border-accent/20 bg-accent-mute">
           <b className="text-accent">提示</b>：扫描全 A 股
           {currentTotal} 只首次需 5-10 分钟（每只拉腾讯 K 线约 100ms）。
           之后由本地缓存提供，再次扫描通常 &lt; 30 秒。建议先小池子（内置/自选）跑通，再尝试全市场。
@@ -513,7 +513,7 @@ function FailureBreakdown({ failed }: { failed: FailedItem[] }) {
       ? "text-bear"
       : r === "insufficient"
         ? "text-ink-soft"
-        : "text-amber-400";
+        : "text-amber-600";
 
   return (
     <details className="card overflow-hidden">
@@ -622,9 +622,9 @@ function RecommendCards({
   playbook: StrategyPlaybook | null;
 }) {
   return (
-    <div className="card overflow-hidden border-amber-500/40 bg-amber-500/5">
-      <div className="px-3 sm:px-4 py-2 border-b border-amber-500/30 text-sm font-medium flex items-center gap-2 flex-wrap">
-        <span className="text-amber-400">⭐ 值得操作（综合置信度 Top {tops.length}）</span>
+    <div className="card overflow-hidden border-amber-400 bg-amber-50">
+      <div className="px-3 sm:px-4 py-2 border-b border-amber-300 text-sm font-medium flex items-center gap-2 flex-wrap">
+        <span className="text-amber-600">⭐ 值得操作（综合置信度 Top {tops.length}）</span>
         <span className="text-ink-mute text-xs hidden sm:inline">
           基于技术评分 / 量比 / 30 日走势 / 波动 / 均线位置 加权
         </span>
@@ -635,11 +635,11 @@ function RecommendCards({
           return (
           <div
             key={t.tsCode}
-            className="rounded-lg border border-amber-500/30 bg-bg-soft/40 p-3 space-y-2"
+            className="rounded-lg border border-amber-300 bg-bg-muted p-3 space-y-2"
           >
             <div className="flex items-baseline justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-amber-400 font-semibold">#{idx + 1}</span>
+                <span className="text-amber-600 font-semibold">#{idx + 1}</span>
                 <Link
                   href={`/stock/${t.tsCode}`}
                   className="font-mono text-base text-accent hover:underline"
@@ -659,7 +659,7 @@ function RecommendCards({
                 )}
               </div>
               <div className="text-right">
-                <div className="text-2xl font-semibold text-amber-400 leading-none">
+                <div className="text-2xl font-semibold text-amber-600 leading-none">
                   {t.rec.confidence}
                 </div>
                 <div className="text-xs text-ink-mute">置信度</div>
@@ -682,7 +682,7 @@ function RecommendCards({
             {/* 按当前策略生成的具体买卖参考价 */}
             {trade && (
               <div className="grid grid-cols-3 gap-2 text-xs pt-1">
-                <div className="rounded border border-bull/30 bg-bull/5 px-2 py-1.5">
+                <div className="rounded border border-bull/30 bg-bull/10 px-2 py-1.5">
                   <div className="text-ink-mute text-[10px] mb-0.5">买点</div>
                   <div className="font-mono text-bull font-semibold">
                     ≤ {formatNumber(trade.entryMax)}
@@ -691,7 +691,7 @@ function RecommendCards({
                     {trade.entryNote}
                   </div>
                 </div>
-                <div className="rounded border border-bear/30 bg-bear/5 px-2 py-1.5">
+                <div className="rounded border border-bear/30 bg-bear/10 px-2 py-1.5">
                   <div className="text-ink-mute text-[10px] mb-0.5">止损</div>
                   <div className="font-mono text-bear font-semibold">
                     {formatNumber(trade.stopLoss)}
@@ -700,9 +700,9 @@ function RecommendCards({
                     {trade.stopNote}
                   </div>
                 </div>
-                <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
+                <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5">
                   <div className="text-ink-mute text-[10px] mb-0.5">分批卖</div>
-                  <div className="font-mono text-amber-400 font-semibold">
+                  <div className="font-mono text-amber-600 font-semibold">
                     {formatNumber(trade.takeProfit1)}
                     <span className="text-ink-mute"> / </span>
                     {formatNumber(trade.takeProfit2)}
@@ -749,7 +749,7 @@ function RecommendCards({
         })}
       </div>
       {playbook && (
-        <div className="px-3 sm:px-4 py-2 border-t border-amber-500/30 text-[11px] text-ink-mute leading-relaxed">
+        <div className="px-3 sm:px-4 py-2 border-t border-amber-300 text-[11px] text-ink-mute leading-relaxed">
           以上买卖参考价根据「{strategyName}」纪律自动计算；具体止损请配合 K
           线页的均线位置微调。完整操盘手册见上方策略卡。
         </div>
@@ -857,15 +857,15 @@ function ResultRows({
             <tr
               key={r.tsCode}
               className={cn(
-                "border-b border-line/50 hover:bg-bg-soft/40",
-                r.pass && "bg-bull/5",
-                isTop && "bg-amber-500/10 border-l-2 border-l-amber-400"
+                "border-b border-line/50 hover:bg-bg-muted",
+                r.pass && "bg-bull/10",
+                isTop && "bg-amber-50 border-l-2 border-l-amber-500"
               )}
             >
               <td className="py-2 px-3 sm:px-4 font-mono whitespace-nowrap">
                 {isTop && (
                   <span
-                    className="text-amber-400 mr-1.5"
+                    className="text-amber-600 mr-1.5"
                     title="综合置信度 Top，值得操作"
                   >
                     ★
@@ -943,7 +943,7 @@ function PlaybookCard({
 }) {
   return (
     <section className="card overflow-hidden border-accent/30">
-      <div className="px-3 sm:px-4 py-2 border-b border-accent/30 bg-accent/5 flex items-center gap-2 flex-wrap">
+      <div className="px-3 sm:px-4 py-2 border-b border-accent/30 bg-accent-mute flex items-center gap-2 flex-wrap">
         <span className="text-sm font-medium text-ink">📋 操盘手册：{name}</span>
         <span className="badge bg-accent/15 text-accent border border-accent/30 text-xs">
           {playbook.tag}
@@ -956,16 +956,16 @@ function PlaybookCard({
         </span>
       </div>
       <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-        <div className="rounded border border-bull/30 bg-bull/5 p-2.5">
+        <div className="rounded border border-bull/30 bg-bull/10 p-2.5">
           <div className="font-medium text-bull mb-1">🟢 买入时机</div>
           <p className="text-ink-soft leading-relaxed">{playbook.entry}</p>
         </div>
-        <div className="rounded border border-bear/30 bg-bear/5 p-2.5">
+        <div className="rounded border border-bear/30 bg-bear/10 p-2.5">
           <div className="font-medium text-bear mb-1">🔴 止损纪律</div>
           <p className="text-ink-soft leading-relaxed">{playbook.stopLoss}</p>
         </div>
-        <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2.5">
-          <div className="font-medium text-amber-400 mb-1">🟡 卖出 / 止盈</div>
+        <div className="rounded border border-amber-300 bg-amber-50 p-2.5">
+          <div className="font-medium text-amber-600 mb-1">🟡 卖出 / 止盈</div>
           <p className="text-ink-soft leading-relaxed">{playbook.exit}</p>
         </div>
       </div>

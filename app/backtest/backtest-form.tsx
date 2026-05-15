@@ -180,7 +180,7 @@ function BacktestResult({ state }: { state: BacktestFormState }) {
             </thead>
             <tbody>
               {s.trades.slice(0, 200).map((t, i) => (
-                <tr key={i} className="border-b border-line/50 hover:bg-bg-soft/40">
+                <tr key={i} className="border-b border-line/50 hover:bg-bg-muted">
                   <td className="py-2 px-3 sm:px-4 font-mono whitespace-nowrap">
                     {t.tsCode}
                   </td>
@@ -230,10 +230,10 @@ function CurveChart({ curve }: { curve: Array<{ date: string; cum: number }> }) 
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[200px]">
-      <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="#3a4456" strokeDasharray="4 4" />
+      <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="#CBD5E1" strokeDasharray="4 4" />
       <polyline
         fill="none"
-        stroke="#22c55e"
+        stroke="#16A34A"
         strokeWidth="1.5"
         points={points}
       />

@@ -102,8 +102,8 @@ export default async function HistoryDetailPage({ params }: Props) {
                 <tr
                   key={r.id}
                   className={cn(
-                    "border-b border-line/50 hover:bg-bg-soft/40",
-                    r.pass && "bg-bull/5"
+                    "border-b border-line/50 hover:bg-bg-muted",
+                    r.pass && "bg-bull/10"
                   )}
                 >
                   <td className="py-2 px-4 font-mono">{r.tsCode}</td>

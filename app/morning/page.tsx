@@ -110,9 +110,9 @@ export default async function MorningPage() {
 
       {/* Top 5 推荐大卡 */}
       {top5.length > 0 && (
-        <section className="card overflow-hidden border-amber-500/40 bg-amber-500/5">
-          <div className="px-3 sm:px-4 py-2 border-b border-amber-500/30 text-sm font-medium flex items-center gap-2 flex-wrap">
-            <span className="text-amber-400">
+        <section className="card overflow-hidden border-amber-400 bg-amber-50">
+          <div className="px-3 sm:px-4 py-2 border-b border-amber-300 text-sm font-medium flex items-center gap-2 flex-wrap">
+            <span className="text-amber-600">
               ⭐ Top {top5.length} 开盘推荐
             </span>
             <span className="text-ink-mute text-xs hidden sm:inline">
@@ -128,11 +128,11 @@ export default async function MorningPage() {
               return (
                 <div
                   key={r.id}
-                  className="rounded-lg border border-amber-500/30 bg-bg-soft/40 p-3 space-y-2"
+                  className="rounded-lg border border-amber-300 bg-bg-muted p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-amber-400 font-semibold">
+                      <span className="text-amber-600 font-semibold">
                         #{idx + 1}
                       </span>
                       <Link
@@ -154,7 +154,7 @@ export default async function MorningPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-semibold text-amber-400 leading-none">
+                      <div className="text-2xl font-semibold text-amber-600 leading-none">
                         {r.score}
                       </div>
                       <div className="text-xs text-ink-mute">评分</div>
@@ -175,7 +175,7 @@ export default async function MorningPage() {
 
                   {trade && (
                     <div className="grid grid-cols-3 gap-2 text-xs pt-1">
-                      <div className="rounded border border-bull/30 bg-bull/5 px-2 py-1.5">
+                      <div className="rounded border border-bull/30 bg-bull/10 px-2 py-1.5">
                         <div className="text-ink-mute text-[10px] mb-0.5">
                           买点
                         </div>
@@ -183,7 +183,7 @@ export default async function MorningPage() {
                           ≤ {formatNumber(trade.entryMax)}
                         </div>
                       </div>
-                      <div className="rounded border border-bear/30 bg-bear/5 px-2 py-1.5">
+                      <div className="rounded border border-bear/30 bg-bear/10 px-2 py-1.5">
                         <div className="text-ink-mute text-[10px] mb-0.5">
                           止损
                         </div>
@@ -191,11 +191,11 @@ export default async function MorningPage() {
                           {formatNumber(trade.stopLoss)}
                         </div>
                       </div>
-                      <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
+                      <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5">
                         <div className="text-ink-mute text-[10px] mb-0.5">
                           分批卖
                         </div>
-                        <div className="font-mono text-amber-400 font-semibold">
+                        <div className="font-mono text-amber-600 font-semibold">
                           {formatNumber(trade.tp1)}
                           <span className="text-ink-mute"> / </span>
                           {formatNumber(trade.tp2)}
@@ -239,7 +239,7 @@ export default async function MorningPage() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-b border-line/50 hover:bg-bg-soft/30 bg-bull/5"
+                      className="border-b border-line/50 hover:bg-bg-muted bg-bull/10"
                     >
                       <td className="py-2 px-3 sm:px-4 font-mono">
                         {r.tsCode}
@@ -297,22 +297,22 @@ export default async function MorningPage() {
       {/* 操盘纪律提示 */}
       {playbook && (
         <section className="card overflow-hidden border-accent/30">
-          <div className="px-3 sm:px-4 py-2 border-b border-accent/30 bg-accent/5 text-sm font-medium">
+          <div className="px-3 sm:px-4 py-2 border-b border-accent/30 bg-accent-mute text-sm font-medium">
             📋 操盘纪律 · 全指标共振（高胜率）
           </div>
           <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            <div className="rounded border border-bull/30 bg-bull/5 p-2.5">
+            <div className="rounded border border-bull/30 bg-bull/10 p-2.5">
               <div className="font-medium text-bull mb-1">🟢 买入</div>
               <p className="text-ink-soft leading-relaxed">{playbook.entry}</p>
             </div>
-            <div className="rounded border border-bear/30 bg-bear/5 p-2.5">
+            <div className="rounded border border-bear/30 bg-bear/10 p-2.5">
               <div className="font-medium text-bear mb-1">🔴 止损</div>
               <p className="text-ink-soft leading-relaxed">
                 {playbook.stopLoss}
               </p>
             </div>
-            <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2.5">
-              <div className="font-medium text-amber-400 mb-1">🟡 卖出</div>
+            <div className="rounded border border-amber-300 bg-amber-50 p-2.5">
+              <div className="font-medium text-amber-600 mb-1">🟡 卖出</div>
               <p className="text-ink-soft leading-relaxed">{playbook.exit}</p>
             </div>
           </div>

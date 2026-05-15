@@ -46,16 +46,16 @@ export default function KLineChart({ kline, ma5, ma10, ma20, ma60 }: Props) {
       width: initWidth,
       height: calcHeight(initWidth),
       layout: {
-        background: { color: "#161a23" },
-        textColor: "#a8b0c0",
+        background: { color: "#FFFFFF" },
+        textColor: "#475569",
       },
       grid: {
-        vertLines: { color: "#222837" },
-        horzLines: { color: "#222837" },
+        vertLines: { color: "#E2E8F0" },
+        horzLines: { color: "#E2E8F0" },
       },
-      rightPriceScale: { borderColor: "#222837" },
+      rightPriceScale: { borderColor: "#E2E8F0" },
       timeScale: {
-        borderColor: "#222837",
+        borderColor: "#E2E8F0",
         timeVisible: false,
       },
       crosshair: { mode: CrosshairMode.Normal },
@@ -63,11 +63,11 @@ export default function KLineChart({ kline, ma5, ma10, ma20, ma60 }: Props) {
     chartRef.current = chart;
 
     const candle = chart.addCandlestickSeries({
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: "#16A34A",
+      downColor: "#DC2626",
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#16A34A",
+      wickDownColor: "#DC2626",
     });
     candle.setData(
       kline.map((b) => ({
@@ -82,7 +82,7 @@ export default function KLineChart({ kline, ma5, ma10, ma20, ma60 }: Props) {
     const vol = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
-      color: "#3a4456",
+      color: "#94A3B8",
     });
     vol.priceScale().applyOptions({
       scaleMargins: { top: 0.85, bottom: 0 },
@@ -92,7 +92,7 @@ export default function KLineChart({ kline, ma5, ma10, ma20, ma60 }: Props) {
         time: b.time as Time,
         value: b.volume,
         color:
-          b.close >= b.open ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
+          b.close >= b.open ? "rgba(22,163,74,0.5)" : "rgba(220,38,38,0.5)",
       }))
     );
 
@@ -110,10 +110,10 @@ export default function KLineChart({ kline, ma5, ma10, ma20, ma60 }: Props) {
           .map((p) => ({ time: p.time as Time, value: p.value as number }))
       );
     };
-    addLine(ma5, "#fbbf24", "MA5");
-    addLine(ma10, "#22d3ee", "MA10");
-    addLine(ma20, "#a78bfa", "MA20");
-    addLine(ma60, "#94a3b8", "MA60");
+    addLine(ma5, "#D97706", "MA5");
+    addLine(ma10, "#0891B2", "MA10");
+    addLine(ma20, "#7C3AED", "MA20");
+    addLine(ma60, "#475569", "MA60");
 
     chart.timeScale().fitContent();
 

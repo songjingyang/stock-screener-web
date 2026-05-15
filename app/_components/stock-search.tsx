@@ -116,8 +116,8 @@ export default function StockSearch() {
               }}
               onMouseEnter={() => setActiveIdx(i)}
               className={cn(
-                "w-full text-left px-3 py-2 flex items-center gap-2 border-b border-line/50 last:border-b-0 hover:bg-bg-soft/60",
-                i === activeIdx && "bg-bg-soft/60"
+                "w-full text-left px-3 py-2 flex items-center gap-2 border-b border-line/50 last:border-b-0 hover:bg-bg-muted",
+                i === activeIdx && "bg-bg-muted"
               )}
             >
               <span className="font-mono text-xs text-accent">{r.tsCode}</span>
@@ -128,7 +128,7 @@ export default function StockSearch() {
                 </span>
               )}
               {r.source === "remote" && (
-                <span className="text-[10px] text-amber-400" title="该股未入本地库，使用实时报价兜底">
+                <span className="text-[10px] text-amber-600" title="该股未入本地库，使用实时报价兜底">
                   实时
                 </span>
               )}

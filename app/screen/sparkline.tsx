@@ -58,10 +58,10 @@ export function Sparkline({
 
   // 区间涨跌：起点 vs 终点
   const up = last >= first;
-  const stroke = up ? "#22c55e" : "#ef4444"; // bull / bear
+  const stroke = up ? "#16A34A" : "#DC2626"; // bull / bear
   const fillUnder = up
-    ? "rgba(34,197,94,0.12)"
-    : "rgba(239,68,68,0.12)";
+    ? "rgba(22,163,74,0.12)"
+    : "rgba(220,38,38,0.12)";
 
   // 起点处的水平基线（灰）
   const baseY = pad + (1 - (first - min) / range) * h;

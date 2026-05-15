@@ -105,7 +105,7 @@ export default async function HomePage() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-b border-line/50 hover:bg-bg-soft/40"
+                      className="border-b border-line/50 hover:bg-bg-muted"
                     >
                       <td className="py-2 px-3 sm:px-0 font-mono whitespace-nowrap">
                         {r.tsCode}
@@ -207,7 +207,7 @@ function PositionsSection({
           title="央妈 · 国债期货"
           subtitle="T（10 年期国债）— 反映对货币政策与流动性的预期"
           snapshot={treasury}
-          accentClass="text-amber-400"
+          accentClass="text-amber-600"
         />
       </div>
     </section>
@@ -263,7 +263,7 @@ function PositionCard({
       </div>
 
       {/* 净持仓概览 */}
-      <div className="rounded-lg bg-bg-soft/40 border border-line p-3">
+      <div className="rounded-lg bg-bg-muted border border-line p-3">
         <div className="flex items-baseline justify-between mb-2">
           <span className={cn(
             "text-sm font-medium",
@@ -433,8 +433,8 @@ function FuturesSettlementCard({
                 "rounded-lg border p-3 transition-colors",
                 isToday &&
                   "border-bear/60 bg-bear/10 ring-1 ring-bear/40 animate-pulse",
-                !isToday && isSoon && "border-amber-500/50 bg-amber-500/10",
-                !isToday && !isSoon && "border-line bg-bg-soft/30"
+                !isToday && isSoon && "border-amber-400 bg-amber-50",
+                !isToday && !isSoon && "border-line bg-bg-soft"
               )}
             >
               <div className="flex items-baseline justify-between gap-2">
@@ -442,7 +442,7 @@ function FuturesSettlementCard({
                   className={cn(
                     "font-mono text-sm font-medium",
                     isToday && "text-bear",
-                    isSoon && !isToday && "text-amber-400"
+                    isSoon && !isToday && "text-amber-600"
                   )}
                 >
                   {e.date}
@@ -451,7 +451,7 @@ function FuturesSettlementCard({
                   className={cn(
                     "text-xs px-1.5 py-0.5 rounded",
                     isToday && "bg-bear/20 text-bear font-semibold",
-                    !isToday && isSoon && "bg-amber-500/20 text-amber-400 font-semibold",
+                    !isToday && isSoon && "bg-amber-100 text-amber-600 font-semibold",
                     !isToday && !isSoon && "text-ink-mute"
                   )}
                 >
@@ -561,7 +561,7 @@ function LhbRow({ item, rank }: { item: LhbHotItem; rank: number }) {
   const netPos = net > 0;
 
   return (
-    <tr className="border-b border-line/50 hover:bg-bg-soft/40">
+    <tr className="border-b border-line/50 hover:bg-bg-muted">
       <td className="py-2 px-3 sm:px-0 text-ink-mute font-mono">{rank}</td>
       <td className="py-2">
         <Link
@@ -597,7 +597,7 @@ function LhbRow({ item, rank }: { item: LhbHotItem; rank: number }) {
       </td>
       <td className="py-2 pr-3 sm:pr-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="px-1.5 py-0.5 rounded bg-bg-soft/60 border border-line text-[11px] text-ink-soft">
+          <span className="px-1.5 py-0.5 rounded bg-bg-muted border border-line text-[11px] text-ink-soft">
             {shortReason(item.explanation)}
           </span>
           {item.isPureYouzi ? (
@@ -606,7 +606,7 @@ function LhbRow({ item, rank }: { item: LhbHotItem; rank: number }) {
             </span>
           ) : item.buyInstCount > 0 ? (
             <span
-              className="px-1.5 py-0.5 rounded bg-bg-soft/40 border border-line text-[11px] text-ink-mute"
+              className="px-1.5 py-0.5 rounded bg-bg-muted border border-line text-[11px] text-ink-mute"
               title={item.explain}
             >
               机构 {item.buyInstCount}

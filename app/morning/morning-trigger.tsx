@@ -44,8 +44,8 @@ export default function MorningTrigger() {
           className={cn(
             "text-xs px-3 py-1.5 rounded border",
             result.ok
-              ? "border-bull/40 text-bull bg-bull/5"
-              : "border-bear/40 text-bear bg-bear/5"
+              ? "border-bull/40 text-bull bg-bull/10"
+              : "border-bear/40 text-bear bg-bear/10"
           )}
         >
           {result.ok ? (

@@ -40,7 +40,7 @@ export default async function HistoryPage() {
                 {runs.map((r) => (
                   <tr
                     key={r.id}
-                    className="border-b border-line/50 hover:bg-bg-soft/40"
+                    className="border-b border-line/50 hover:bg-bg-muted"
                   >
                     <td className="py-2 px-3 sm:px-4 font-mono whitespace-nowrap">
                       {compactDate(r.scanDate)}

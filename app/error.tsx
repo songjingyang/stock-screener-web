@@ -29,7 +29,7 @@ export default function GlobalError({
         </p>
       )}
       {error.stack && (
-        <pre className="card p-3 text-xs whitespace-pre-wrap break-all overflow-auto max-h-96 bg-bg-soft/40 text-ink-soft">
+        <pre className="card p-3 text-xs whitespace-pre-wrap break-all overflow-auto max-h-96 bg-bg-muted text-ink-soft">
           {error.stack}
         </pre>
       )}
