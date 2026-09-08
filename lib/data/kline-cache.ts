@@ -228,43 +228,53 @@ export async function getKline(
     });
 
     if (remote.length) {
-      // 自动确保 Stock 行存在（自定义代码 / 非内置池兜底）
-      const symbol = tsCode.slice(0, 6);
-      await prisma.stock.upsert({
-        where: { tsCode },
-        update: {},
-        create: {
-          tsCode,
-          symbol,
-          name: tsCode,
-          market: tsCode.endsWith(".SH")
-            ? "SH"
-            : tsCode.endsWith(".SZ")
-              ? "SZ"
-              : "BJ",
-          board: inferBoard(symbol),
-        },
-      });
-
-      await prisma.klineDaily.createMany({
-        data: remote.map((r) => ({
-          tsCode,
-          tradeDate: r.date,
-          open: r.open,
-          high: r.high,
-          low: r.low,
-          close: r.close,
-          vol: r.vol,
-          amount: r.amount,
-        })),
-      });
-
+      // 先合并到内存，保证扫描可用；落库失败不得拖垮本票结果
       const map = new Map<string, KLine>();
       for (const b of bars) map.set(b.date, b);
       for (const r of remote) map.set(r.date, r);
       bars = Array.from(map.values()).sort((a, b) =>
         a.date.localeCompare(b.date)
       );
+
+      // 自动确保 Stock 行存在（自定义代码 / 非内置池兜底）
+      const symbol = tsCode.slice(0, 6);
+      try {
+        await prisma.stock.upsert({
+          where: { tsCode },
+          update: {},
+          create: {
+            tsCode,
+            symbol,
+            name: tsCode,
+            market: tsCode.endsWith(".SH")
+              ? "SH"
+              : tsCode.endsWith(".SZ")
+                ? "SZ"
+                : "BJ",
+            board: inferBoard(symbol),
+          },
+        });
+
+        // 与 warmup cron / 并发扫描竞态时可能撞 (tsCode, tradeDate) 唯一约束。
+        // 统一 catch：本地 SQLite 无 skipDuplicates 类型，生产 Postgres 同样靠吞掉重复写入保扫描。
+        await prisma.klineDaily.createMany({
+          data: remote.map((r) => ({
+            tsCode,
+            tradeDate: r.date,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+            vol: r.vol,
+            amount: r.amount,
+          })),
+        });
+      } catch (err) {
+        console.warn(
+          `[kline-cache] persist ${tsCode} failed (scan continues):`,
+          (err as Error).message
+        );
+      }
     }
   }
 

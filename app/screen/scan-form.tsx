@@ -40,8 +40,13 @@ interface Progress {
   avgChunkMs: number;
 }
 
-/** 单个 chunk 内股票数。Hobby 60s 函数上限 + 腾讯并发 8、平均 0.4s/只冷拉 */
-const CHUNK_SIZE = 600;
+/**
+ * 单个 chunk 内股票数。
+ * Hobby 单次 server action 约 60s；腾讯并发 4 + 重试后冷拉约 0.5–1s/只。
+ * forceRefresh 时更保守，避免整批超时被前端记成「无 K 线」。
+ */
+const CHUNK_SIZE_CACHE = 400;
+const CHUNK_SIZE_REFRESH = 150;
 
 export default function ScanForm({
   strategies,
@@ -89,6 +94,7 @@ export default function ScanForm({
         return;
       }
       const tsCodes = resolved.tsCodes;
+      const chunkSize = forceRefresh ? CHUNK_SIZE_REFRESH : CHUNK_SIZE_CACHE;
 
       // 2) 切 chunk 顺序调用
       const allItems: SerializedItem[] = [];
@@ -99,15 +105,55 @@ export default function ScanForm({
 
       setProgress({ done: 0, total: tsCodes.length, avgChunkMs: 0 });
 
-      for (let i = 0; i < tsCodes.length; i += CHUNK_SIZE) {
-        const chunk = tsCodes.slice(i, i + CHUNK_SIZE);
+      for (let i = 0; i < tsCodes.length; i += chunkSize) {
+        const chunk = tsCodes.slice(i, i + chunkSize);
         const t0 = Date.now();
-          const r = await runScanChunk({
+        let r = await runScanChunk({
           strategyId,
           tsCodes: chunk,
           forceRefresh,
           mergeRealtime,
         });
+        // 超时/瞬时错误时整批重试一次（半批），降低「筛选失败」误报
+        if (!r.ok && chunk.length > 40) {
+          console.warn("[chunk] 失败，拆半重试:", r.message);
+          const mid = Math.ceil(chunk.length / 2);
+          const parts = [chunk.slice(0, mid), chunk.slice(mid)];
+          const mergedItems: SerializedItem[] = [];
+          const mergedFailed: string[] = [];
+          const mergedDetail: FailedItem[] = [];
+          let okAny = false;
+          let partDate = "";
+          for (const part of parts) {
+            const pr = await runScanChunk({
+              strategyId,
+              tsCodes: part,
+              forceRefresh,
+              mergeRealtime,
+            });
+            if (pr.ok) {
+              okAny = true;
+              if (pr.items) mergedItems.push(...pr.items);
+              if (pr.failed) mergedFailed.push(...pr.failed);
+              if (pr.failedDetail) mergedDetail.push(...pr.failedDetail);
+              if (pr.scanDate && !partDate) partDate = pr.scanDate;
+            } else {
+              mergedFailed.push(...part);
+              for (const c of part) {
+                mergedDetail.push({ tsCode: c, reason: "no_kline", klineCount: 0 });
+              }
+            }
+          }
+          r = okAny
+            ? {
+                ok: true,
+                items: mergedItems,
+                failed: mergedFailed,
+                failedDetail: mergedDetail,
+                scanDate: partDate,
+              }
+            : r;
+        }
         chunkTimes.push(Date.now() - t0);
 
         if (!r.ok) {
@@ -363,7 +409,7 @@ export default function ScanForm({
       </div>
 
       {progress && progress.total > 0 && (
-        <ScanProgress progress={progress} chunkSize={CHUNK_SIZE} />
+        <ScanProgress progress={progress} chunkSize={forceRefresh ? CHUNK_SIZE_REFRESH : CHUNK_SIZE_CACHE} />
       )}
 
       {state && !state.ok && (
