@@ -1,8 +1,5 @@
 "use server";
 
-/** Hobby 上限 60s；Pro 可在项目设置里抬高 */
-export const maxDuration = 60;
-
 import { prisma } from "@/lib/db/prisma";
 import { runScan, type FailedItem } from "@/lib/screener/runner";
 import { BUILTIN_POOL, toTsCode } from "@/lib/data/universe";
